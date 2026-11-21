@@ -15,9 +15,10 @@ attached to its body part, so it swings with your arms and legs and follows crou
    **Held**.
 4. Choose a fit:
    - **Armor shape**: stretches the model to fill the armor box exactly. Best for blocks.
-   - **Fit inside**: scales evenly so the model fits inside the armor box. Best for flat items.
+   - **Fit inside**: scales evenly so the model fits inside the armor box and rests it on the front of the armor.
+     Best for flat items like swords.
    - **Vanilla size**: normal head-item size, like a pumpkin.
-5. Fine-tune with Move X/Y/Z (pixels), Turn X/Y/Z (degrees) and Size. Turning keeps the model filling the armor
+5. Fine-tune with Move X/Y/Z (pixels; +Y up, +Z forward), Turn X/Y/Z (degrees) and Size. Turning keeps the model filling the armor
    shape. **Hide armor** hides your real armor in that slot.
 
 Settings save to `config/vanity.json`. Only you see the cosmetics.
@@ -28,7 +29,11 @@ Settings save to `config/vanity.json`. Only you see the cosmetics.
 same amount vanilla armor does (1px for helmet/chest/boots, 0.5px for leggings), then measures the item model's real
 bounding box (`ItemStackRenderState#getModelBoundingBox`) and scales/centers it to fill that box.
 
-## Build
+## Build and test
 
 Requires Java 25. `./gradlew build` produces `build/libs/vanity-<version>.jar`.
 GitHub Actions builds every push and also pushes the jar and log to the `build-output` branch.
+
+`./gradlew runClientGameTest` starts a real client (Fabric client game test), equips glass, solid blocks, a pumpkin
+and a sword as cosmetics, and takes screenshots into `build/run/clientGameTest/screenshots`. CI runs it in a virtual
+display and pushes the screenshots to the `test-output` branch.
