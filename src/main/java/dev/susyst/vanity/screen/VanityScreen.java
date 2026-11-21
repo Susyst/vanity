@@ -23,6 +23,7 @@ import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
 
@@ -82,7 +83,8 @@ public final class VanityScreen extends Screen {
 	private int panelX;
 	private int panelW;
 	private int contentY;
-	private int hintY;
+	/** Where each page's hint text goes: just below its last row. */
+	private final Map<Page, Integer> hintY = new EnumMap<>(Page.class);
 
 	public VanityScreen() {
 		this(CosmeticSlot.HEAD, Page.LOOK);
@@ -268,7 +270,11 @@ public final class VanityScreen extends Screen {
 		int r2 = r1 + step;
 		int r3 = r2 + step;
 		int r4 = r3 + step;
-		this.hintY = r4 + ROW + 6;
+		this.hintY.put(Page.LOOK, r4 + 2);
+		this.hintY.put(Page.STYLE, r4 + 2);
+		this.hintY.put(Page.TRIM, r4 + 2);
+		this.hintY.put(Page.DESIGN, r4 + step + 2);
+		this.hintY.put(Page.FIT, r4 + 2);
 
 		// ---- Look ----
 		Button set = this.button(Page.LOOK, this.panelX, r0, this.panelW, "", this::cycleArmorSet);
@@ -359,7 +365,7 @@ public final class VanityScreen extends Screen {
 			this.sync(() -> {
 				TrimLayer l = this.current().design[index];
 				MutableComponent label = Component.literal("Layer " + (index + 1));
-				if (l.enabled) label.append(" ").append(swatch(l.color));
+				if (l.enabled) label.append(" ").append(Component.literal("\u2588").withColor(l.color & 0xFFFFFF));
 				tab.setMessage(label);
 				tab.active = this.designLayer != index;
 			});
@@ -541,10 +547,10 @@ public final class VanityScreen extends Screen {
 
 		switch (this.page) {
 			case LOOK -> this.lookStatus(graphics, this.current());
-			case STYLE -> this.hint(graphics, "Works on the look, or your real armor if there's no look.");
-			case TRIM -> this.hint(graphics, "Shows on the look or your real armor, and on inventory icons.");
-			case DESIGN -> this.hint(graphics, "Up to 3 trim patterns in any color, drawn over your armor.");
-			case FIT -> this.hint(graphics, "For items and blocks: fitted to the armor shape.");
+			case STYLE -> this.hint(graphics, "Works on the look, or on your real armor if this slot has no look.");
+			case TRIM -> this.hint(graphics, "Shows on the look or your real armor, and on inventory icons. Texture packs apply.");
+			case DESIGN -> this.hint(graphics, "Stack up to 3 trim patterns, each in any color. Drawn over the armor in this slot.");
+			case FIT -> this.hint(graphics, "For items and blocks: sized to the armor shape.");
 		}
 
 		LocalPlayer player = this.minecraft.player;
@@ -555,8 +561,15 @@ public final class VanityScreen extends Screen {
 		}
 	}
 
+	/** Gray help text under the page, wrapped to the panel width. */
 	private void hint(GuiGraphicsExtractor graphics, String text) {
-		graphics.text(this.font, Component.literal(text), this.panelX, Math.min(this.hintY, this.height - 42), GRAY);
+		int y = this.hintY.getOrDefault(this.page, this.contentY);
+
+		for (FormattedCharSequence line : this.font.split(Component.literal(text), this.panelW)) {
+			if (y > this.height - 40) break;
+			graphics.text(this.font, line, this.panelX, y, GRAY);
+			y += this.font.lineHeight + 1;
+		}
 	}
 
 	private void lookStatus(GuiGraphicsExtractor graphics, SlotSettings s) {
