@@ -14,6 +14,7 @@ import org.joml.Vector3f;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
@@ -38,16 +39,15 @@ import dev.susyst.vanity.config.VanityConfig;
 import dev.susyst.vanity.render.VanityCosmetics;
 
 /**
- * The wardrobe. Left: live preview. Right: pick a slot, then a page:
+ * The wardrobe, in a frosted-glass style. Left: live preview. Right: pick a slot, then a page:
  * Look (what it looks like), Style (glint, dye), Trim (vanilla trims), Design (custom trims), Fit (non-armor items).
  */
 public final class VanityScreen extends Screen {
 	private static final int ROW = 20;
 	private static final int GAP = 4;
-	private static final int WHITE = 0xFFFFFFFF;
-	private static final int GRAY = 0xFFA0A0A0;
-	private static final int GREEN = 0xFF80FF80;
-	private static final int RED = 0xFFFF6060;
+	private static final int GRAY = Glass.TEXT_DIM;
+	private static final int GREEN = 0xFF7CF5B0;
+	private static final int RED = 0xFFFF7A7A;
 	/** The 16 dye colors, for the quick color rows. */
 	private static final List<Integer> DYE_COLORS = Trims.PALETTE.subList(0, 16);
 
@@ -70,8 +70,8 @@ public final class VanityScreen extends Screen {
 	private int designLayer;
 	private float previewYaw;
 
-	private final List<Button> slotTabs = new ArrayList<>();
-	private final Map<Page, Button> pageTabs = new EnumMap<>(Page.class);
+	private final List<GlassButton> slotTabs = new ArrayList<>();
+	private final Map<Page, GlassButton> pageTabs = new EnumMap<>(Page.class);
 	private final Map<Page, List<AbstractWidget>> pageWidgets = new EnumMap<>(Page.class);
 	/** Actions run by {@link #refresh()} to show the current settings on the widgets. */
 	private final List<Runnable> syncers = new ArrayList<>();
@@ -133,11 +133,15 @@ public final class VanityScreen extends Screen {
 	}
 
 	/** A button that runs the action, then refreshes the screen. Page null means always visible. */
-	private Button button(Page page, int x, int y, int w, String label, Runnable action) {
-		Button button = Button.builder(Component.literal(label), b -> {
+	private GlassButton button(Page page, int x, int y, int w, String label, Runnable action) {
+		return this.button(page, x, y, w, label, GlassButton.Style.NORMAL, action);
+	}
+
+	private GlassButton button(Page page, int x, int y, int w, String label, GlassButton.Style style, Runnable action) {
+		GlassButton button = new GlassButton(x, y, w, ROW, Component.literal(label), b -> {
 			action.run();
 			this.refresh();
-		}).bounds(x, y, w, ROW).build();
+		}, style);
 		return page == null ? this.addRenderableWidget(button) : this.on(page, button);
 	}
 
@@ -145,16 +149,17 @@ public final class VanityScreen extends Screen {
 		this.syncers.add(syncer);
 	}
 
-	/** A row of dye-color buttons. */
-	private void colorRow(Page page, int y, IntConsumer onPick) {
+	/** A row of dye-color swatches; the current color is outlined. */
+	private void colorRow(Page page, int y, IntSupplier current, IntConsumer onPick) {
 		int count = DYE_COLORS.size();
 		int w = Math.max(8, (this.panelW - (count - 1) * 2) / count);
 
 		for (int i = 0; i < count; i++) {
 			int color = DYE_COLORS.get(i);
-			Button swatchButton = this.button(page, this.panelX + i * (w + 2), y, w, "", () -> onPick.accept(color));
-			swatchButton.setMessage(swatch(color));
+			GlassButton swatchButton = this.button(page, this.panelX + i * (w + 2), y, w, "", GlassButton.Style.SWATCH, () -> onPick.accept(color));
+			swatchButton.swatchColor = color;
 			swatchButton.setTooltip(tip(String.format(Locale.ROOT, "#%06X", color)));
+			this.sync(() -> swatchButton.selected = (current.getAsInt() & 0xFFFFFF) == color);
 		}
 	}
 
@@ -178,7 +183,7 @@ public final class VanityScreen extends Screen {
 
 	/** A "#RRGGBB" box editing one color. */
 	private void hexBox(Page page, int x, int y, int w, IntSupplier get, IntConsumer set) {
-		EditBox box = this.on(page, new EditBox(this.font, x, y, w, ROW, Component.literal("Hex color")));
+		EditBox box = this.on(page, new GlassEditBox(this.font, x, y, w, ROW, Component.literal("Hex color")));
 		box.setMaxLength(7);
 		box.setHint(Component.literal("#RRGGBB"));
 		box.setResponder(text -> {
@@ -228,8 +233,8 @@ public final class VanityScreen extends Screen {
 		this.syncers.clear();
 
 		this.previewRight = Math.max(110, (int) (this.width * 0.36F));
-		this.panelX = this.previewRight + 8;
-		this.panelW = Math.max(200, Math.min(this.width - this.panelX - 10, 300));
+		this.panelX = this.previewRight + 14;
+		this.panelW = Math.max(200, Math.min(this.width - this.panelX - 16, 300));
 		int halfW = (this.panelW - GAP) / 2;
 		int thirdW = (this.panelW - GAP * 2) / 3;
 		int x2 = this.panelX + thirdW + GAP;
@@ -238,33 +243,27 @@ public final class VanityScreen extends Screen {
 		int labelW = this.panelW - 2 * (arrowW + GAP);
 		int step = ROW + GAP;
 
-		// Slot tabs
-		int y = 24;
+		// Slot tabs (segmented control)
+		int y = 32;
 		CosmeticSlot[] slots = CosmeticSlot.values();
-		int tabW = (this.panelW - GAP * 3) / 4;
+		int tabW = (this.panelW - 2 * 3) / 4;
 
 		for (int i = 0; i < slots.length; i++) {
 			CosmeticSlot slot = slots[i];
-			Button tab = Button.builder(Component.literal(slot.label), b -> this.select(slot))
-					.bounds(this.panelX + i * (tabW + GAP), y, tabW, ROW).build();
-			this.slotTabs.add(this.addRenderableWidget(tab));
+			this.slotTabs.add(this.button(null, this.panelX + i * (tabW + 2), y, tabW, slot.label, GlassButton.Style.SEGMENT, () -> this.select(slot)));
 		}
 
-		// Page tabs
+		// Page tabs (underlined text tabs)
 		y += step;
 		Page[] pages = Page.values();
-		int pageW = (this.panelW - GAP * (pages.length - 1)) / pages.length;
+		int pageW = this.panelW / pages.length;
 
 		for (int i = 0; i < pages.length; i++) {
 			Page p = pages[i];
-			Button tab = Button.builder(Component.literal(p.label), b -> {
-				this.page = p;
-				this.refresh();
-			}).bounds(this.panelX + i * (pageW + GAP), y, pageW, ROW).build();
-			this.pageTabs.put(p, this.addRenderableWidget(tab));
+			this.pageTabs.put(p, this.button(null, this.panelX + i * pageW, y, pageW, p.label, GlassButton.Style.TAB, () -> this.page = p));
 		}
 
-		this.contentY = y + ROW + 8;
+		this.contentY = y + ROW + 10;
 		int r0 = this.contentY;
 		int r1 = r0 + step;
 		int r2 = r1 + step;
@@ -287,7 +286,7 @@ public final class VanityScreen extends Screen {
 
 		int smallW = 36;
 		int boxW = this.panelW - 3 * (smallW + GAP);
-		this.itemBox = this.on(Page.LOOK, new EditBox(this.font, this.panelX, r1, boxW, ROW, Component.literal("Item ID")));
+		this.itemBox = this.on(Page.LOOK, new GlassEditBox(this.font, this.panelX, r1, boxW, ROW, Component.literal("Item ID")));
 		this.itemBox.setMaxLength(128);
 		this.itemBox.setHint(Component.literal("netherite_chestplate"));
 		this.itemBox.setResponder(value -> {
@@ -330,7 +329,7 @@ public final class VanityScreen extends Screen {
 			this.current().dyeColor = color;
 			this.current().customDye = true;
 		};
-		this.colorRow(Page.STYLE, r1, setDye);
+		this.colorRow(Page.STYLE, r1, () -> this.current().customDye ? this.current().dyeColor : -1, setDye);
 		this.colorSliders(Page.STYLE, r2, thirdW, () -> this.current().dyeColor, setDye);
 		this.hexBox(Page.STYLE, this.panelX, r3, thirdW, () -> this.current().dyeColor, setDye);
 		this.button(Page.STYLE, x2, r3, thirdW, "Reset", () -> this.current().resetStyle());
@@ -361,13 +360,13 @@ public final class VanityScreen extends Screen {
 
 		for (int k = 0; k < SlotSettings.DESIGN_LAYERS; k++) {
 			int index = k;
-			Button tab = this.button(Page.DESIGN, this.panelX + k * (layerW + GAP), r0, layerW, "", () -> this.designLayer = index);
+			GlassButton tab = this.button(Page.DESIGN, this.panelX + k * (layerW + GAP), r0, layerW, "", GlassButton.Style.SEGMENT, () -> this.designLayer = index);
 			this.sync(() -> {
 				TrimLayer l = this.current().design[index];
 				MutableComponent label = Component.literal("Layer " + (index + 1));
 				if (l.enabled) label.append(" ").append(Component.literal("\u2588").withColor(l.color & 0xFFFFFF));
 				tab.setMessage(label);
-				tab.active = this.designLayer != index;
+				tab.selected = this.designLayer == index;
 			});
 		}
 
@@ -384,7 +383,7 @@ public final class VanityScreen extends Screen {
 			this.layer().color = color;
 			this.layer().enabled = true;
 		};
-		this.colorRow(Page.DESIGN, r2, setLayerColor);
+		this.colorRow(Page.DESIGN, r2, () -> this.layer().color, setLayerColor);
 		this.colorSliders(Page.DESIGN, r3, thirdW, () -> this.layer().color, setLayerColor);
 		this.hexBox(Page.DESIGN, this.panelX, r4, thirdW, () -> this.layer().color, setLayerColor);
 		this.button(Page.DESIGN, x2, r4, thirdW, "Clear", () -> this.current().resetDesign());
@@ -411,8 +410,8 @@ public final class VanityScreen extends Screen {
 		this.fitSlider(this.panelX, r3, this.panelW, "Size", 0.25, 3.0, 0.05, "%.2f", s -> s.scale, (s, v) -> s.scale = v);
 
 		// ---- Bottom row ----
-		int bottomY = this.height - 28;
-		this.addRenderableWidget(new ValueSlider(10, bottomY, this.previewRight - 14, ROW, "Turn view", 0, 360, 5, "%.0f", this.previewYaw, v -> this.previewYaw = (float) v));
+		int bottomY = this.height - 36;
+		this.addRenderableWidget(new ValueSlider(18, bottomY, this.previewRight - 32, ROW, "Turn view", 0, 360, 5, "%.0f", this.previewYaw, v -> this.previewYaw = (float) v));
 
 		Button enabled = this.button(null, this.panelX, bottomY, thirdW, "", () -> config().enabled = !config().enabled);
 		enabled.setTooltip(tip("Turn all Vanity looks on or off"));
@@ -422,7 +421,7 @@ public final class VanityScreen extends Screen {
 		icons.setTooltip(tip("Also show the looks on your worn armor's icons in the inventory"));
 		this.sync(() -> icons.setMessage(Component.literal("Inv icons: " + onOff(config().showInInventory))));
 
-		this.button(null, x3, bottomY, thirdW, "Done", this::onClose);
+		this.button(null, x3, bottomY, thirdW, "Done", GlassButton.Style.PRIMARY, this::onClose);
 
 		this.syncItemBox();
 		this.initialized = true;
@@ -515,11 +514,12 @@ public final class VanityScreen extends Screen {
 		CosmeticSlot[] slots = CosmeticSlot.values();
 
 		for (int i = 0; i < this.slotTabs.size(); i++) {
-			this.slotTabs.get(i).active = slots[i] != this.selected;
+			this.slotTabs.get(i).selected = slots[i] == this.selected;
 		}
 
-		for (Map.Entry<Page, Button> entry : this.pageTabs.entrySet()) {
-			entry.getValue().active = entry.getKey() != this.page && this.available(entry.getKey());
+		for (Map.Entry<Page, GlassButton> entry : this.pageTabs.entrySet()) {
+			entry.getValue().selected = entry.getKey() == this.page;
+			entry.getValue().active = this.available(entry.getKey());
 		}
 
 		for (Map.Entry<Page, List<AbstractWidget>> entry : this.pageWidgets.entrySet()) {
@@ -532,18 +532,30 @@ public final class VanityScreen extends Screen {
 		this.syncing = false;
 	}
 
+	/** Blur the world behind the wardrobe and darken it slightly. */
+	@Override
+	public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
+		this.extractBlurredBackground(graphics);
+		graphics.fillGradient(0, 0, this.width, this.height, 0x40050812, 0x90050812);
+	}
+
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
-		int x0 = 10;
-		int y0 = 24;
+		// Glass panels: preview on the left, controls on the right
+		Glass.panel(graphics, 8, 8, this.previewRight, this.height - 8);
+		Glass.panel(graphics, this.panelX - 8, 8, this.panelX + this.panelW + 8, this.height - 8);
+		int x0 = 12;
+		int y0 = 12;
 		int x1 = this.previewRight - 4;
-		int y1 = this.height - 34;
-		graphics.fill(x0, y0, x1, y1, 0x66000000);
-		graphics.fill(this.panelX, this.contentY - 5, this.panelX + this.panelW, this.contentY - 4, 0x40FFFFFF);
+		int y1 = this.height - 42;
+
+		// Header
+		graphics.text(this.font, Component.literal("VANITY").withStyle(ChatFormatting.BOLD), this.panelX, 16, Glass.ACCENT);
+		graphics.text(this.font, Component.literal("wardrobe"), this.panelX + this.font.width("VANITY") + 8, 16, Glass.TEXT_DIM);
+		// Line under the page tabs
+		graphics.fill(this.panelX, this.contentY - 6, this.panelX + this.panelW, this.contentY - 5, Glass.CONTROL_BORDER);
 
 		super.extractRenderState(graphics, mouseX, mouseY, a);
-
-		graphics.centeredText(this.font, this.title, this.width / 2, 8, WHITE);
 
 		switch (this.page) {
 			case LOOK -> this.lookStatus(graphics, this.current());
@@ -566,7 +578,7 @@ public final class VanityScreen extends Screen {
 		int y = this.hintY.getOrDefault(this.page, this.contentY);
 
 		for (FormattedCharSequence line : this.font.split(Component.literal(text), this.panelW)) {
-			if (y > this.height - 40) break;
+			if (y > this.height - 48) break;
 			graphics.text(this.font, line, this.panelX, y, GRAY);
 			y += this.font.lineHeight + 1;
 		}
