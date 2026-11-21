@@ -227,7 +227,8 @@ public final class VanityScreen extends Screen {
 				this.changed();
 			});
 			int selectedIndex = Math.max(0, current.getAsInt());
-			this.menuScroll = Math.max(0, Math.min(selectedIndex - MENU_MAX_ROWS / 2, list.size() - MENU_MAX_ROWS));
+			this.menuScroll = 0;
+			this.menuScroll = this.clampScroll(selectedIndex - this.menuRows() / 2);
 		}, GlassButton.Style.NORMAL);
 		this.on(page, button);
 		this.sync(() -> {
@@ -653,16 +654,65 @@ public final class VanityScreen extends Screen {
 		this.syncing = false;
 	}
 
+	// ---- test hooks (GUI-scaled coordinates) ----
+
+	/** Centre of the visible widget whose label starts with {@code prefix}, or null. */
+	public double[] widgetCenter(String prefix) {
+		for (var child : this.children()) {
+			if (child instanceof net.minecraft.client.gui.components.AbstractWidget widget && widget.visible && widget.getMessage().getString().startsWith(prefix)) {
+				return new double[] {widget.getX() + widget.getWidth() / 2.0, widget.getY() + widget.getHeight() / 2.0};
+			}
+		}
+
+		return null;
+	}
+
+	/** Centre of the open dropdown's row labelled {@code label} (scrolling it into view), or null. */
+	public double[] menuRowCenter(String label) {
+		if (this.menu == null) return null;
+
+		for (int i = 0; i < this.menu.options().size(); i++) {
+			if (!this.menu.options().get(i).label().equals(label)) continue;
+			int rows = this.menuRows();
+			if (i < this.menuScroll || i >= this.menuScroll + rows) this.menuScroll = this.clampScroll(i - rows / 2);
+			int rowY = this.menuTop() + 2 + (i - this.menuScroll) * MENU_ROW;
+			return new double[] {this.menu.x() + this.menu.w() / 2.0, rowY + MENU_ROW / 2.0};
+		}
+
+		return null;
+	}
+
+	public boolean menuOpen() {
+		return this.menu != null;
+	}
+
 	// ---- dropdown menu ----
 
 	private int menuRows() {
-		return Math.min(MENU_MAX_ROWS, this.menu.options().size());
+		int fit = Math.max(3, (this.menuSpace() - 4) / MENU_ROW);
+		return Math.min(Math.min(MENU_MAX_ROWS, fit), this.menu.options().size());
 	}
 
-	/** Top of the open menu: below its button, or above it if there's no room. */
+	/** Opens below its button when the whole list fits there (or there's more room below than above). */
+	private boolean menuBelow() {
+		int below = this.height - 4 - this.menu.y();
+		int above = this.menu.anchorY() - 5;
+		int full = Math.min(MENU_MAX_ROWS, this.menu.options().size()) * MENU_ROW + 4;
+		return below >= full || below >= above;
+	}
+
+	private int menuSpace() {
+		return this.menuBelow() ? this.height - 4 - this.menu.y() : this.menu.anchorY() - 5;
+	}
+
+	/** Top of the open menu, always kept on screen. */
 	private int menuTop() {
 		int h = this.menuRows() * MENU_ROW + 4;
-		return this.menu.y() + h > this.height - 4 ? this.menu.anchorY() - h - 1 : this.menu.y();
+		return this.menuBelow() ? this.menu.y() : Math.max(4, this.menu.anchorY() - 1 - h);
+	}
+
+	private int clampScroll(int scroll) {
+		return Math.max(0, Math.min(scroll, this.menu.options().size() - this.menuRows()));
 	}
 
 	private boolean inMenu(double mouseX, double mouseY) {
@@ -680,6 +730,7 @@ public final class VanityScreen extends Screen {
 
 	private void extractMenu(GuiGraphicsExtractor g, int mouseX, int mouseY) {
 		Menu m = this.menu;
+		this.menuScroll = this.clampScroll(this.menuScroll);
 		int rows = this.menuRows();
 		int top = this.menuTop();
 		int h = rows * MENU_ROW + 4;
@@ -740,8 +791,7 @@ public final class VanityScreen extends Screen {
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
 		if (this.menu != null) {
-			int max = Math.max(0, this.menu.options().size() - this.menuRows());
-			this.menuScroll = Math.max(0, Math.min(max, this.menuScroll - (int) Math.signum(scrollY)));
+			this.menuScroll = this.clampScroll(this.menuScroll - (int) Math.signum(scrollY));
 			return true;
 		}
 

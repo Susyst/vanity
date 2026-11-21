@@ -540,23 +540,12 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.setScreen(() -> VanityScreen.allSlots(VanityScreen.Page.RUNE));
 		context.waitTicks(5);
 
-		// Click the Effect dropdown (same layout math as the screen), then pick "Rainbow" (row 2: None, Dust, Rainbow)
-		double[] spot = context.computeOnClient(client -> {
-			int width = client.getWindow().getGuiScaledWidth();
-			int previewRight = Math.max(110, (int) (width * 0.36F));
-			int panelX = previewRight + 14;
-			int panelW = Math.max(200, Math.min(width - panelX - 16, 300));
-			int halfW = (panelW - 4) / 2;
-			int rowTop = 86;
-			double scale = client.getWindow().getGuiScale();
-			return new double[] {(panelX + halfW / 2.0) * scale, (rowTop + 10) * scale, (rowTop + 21 + 2 + 2 * 14 + 7) * scale};
-		});
-		context.getInput().setCursorPos(spot[0], spot[1]);
-		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		// Click the Effect dropdown, then the "Rainbow" row, at the positions the screen reports
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Effect:"));
 		context.waitTicks(3);
+		check(context.computeOnClient(client -> ((VanityScreen) client.gui.screen()).menuOpen()), "Clicking Effect should open its dropdown");
 		context.takeScreenshot("25c_dropdown_open");
-		context.getInput().setCursorPos(spot[0], spot[2]);
-		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).menuRowCenter("Rainbow"));
 		context.waitTicks(3);
 		context.runOnClient(client -> {
 			for (CosmeticSlot slot : CosmeticSlot.values()) {
@@ -662,5 +651,16 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		settings.resetArmorStyle();
 		settings.hideArmor = true;
 		settings.resetTransform();
+	}
+
+	private static void clickAt(ClientGameTestContext context, java.util.function.Function<net.minecraft.client.Minecraft, double[]> where) {
+		double[] spot = context.computeOnClient(client -> {
+			double[] gui = where.apply(client);
+			check(gui != null, "Couldn't find the thing to click");
+			double scale = client.getWindow().getGuiScale();
+			return new double[] {gui[0] * scale, gui[1] * scale};
+		});
+		context.getInput().setCursorPos(spot[0], spot[1]);
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
 	}
 }
