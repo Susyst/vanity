@@ -8,29 +8,28 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.9.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.10.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. Click **Armor look** to change all four slots at once: Leather, Chainmail, Iron, Gold, Copper, Diamond,
    Netherite, then Off (your real armor).
 4. For one slot only, pick its tab and type an armor id (`netherite_chestplate`, `golden_helmet`...), or hold one and
    press **Held**. **Clear** goes back to your real armor for that slot.
 
-The wardrobe is a frosted-glass panel over your blurred game, with a page for each kind of option:
+The wardrobe is a frosted-glass panel over your blurred game. Pick a slot (or **All** to change every piece at
+once), then a page. Every choice with more than two options is a dropdown.
 - **Look**: what the slot looks like (armor id, Held, Worn, Clear), plus **Invisible** and **No armor: Hide/Show**
   (by default a look disappears when you take that armor off).
-- **Style**: **Glint** (Like real / On / Off) and **Dye** for leather, with a color row, RGB sliders and a hex box.
-- **Trim**: keep your armor's trim, no trim, or **Pick** any vanilla pattern and material.
+- **Style**: **Glint** (Like real / On / Off), **Dye** for leather (colors, RGB sliders, hex), **Opacity**
+  (see-through armor), **Glow** (armor that stays bright in the dark) and **Trim glow** (a soft glow on trims and
+  designs).
+- **Trim**: keep your armor's trim, no trim, or pick any vanilla pattern and material.
 - **Design**: custom trims, up to 3 trim patterns stacked, each in any color.
-- **Rune**: particle effects on each piece, like SkyBlock runes but bigger: 18 effects (dust in any color, rainbow,
-  flames, glyphs, lightning, souls, petals...) in 6 shapes (halo, orbit rings, spiral, wings, aura, trail), with size,
-  amount and speed. Only you see them; press F5.
-- **Fit**: size and position for non-armor items.
+- **Rune**: particle effects on each piece, like SkyBlock runes but bigger: 18 effects in 6 shapes (halo, orbit
+  rings, spiral, wings, aura, trail). **Detail** is how many evenly spaced points make the shape (the whole shape is
+  always drawn), **Length** how long each point lasts. Only you see them; press F5.
 
-The Style page also has **Opacity** (see-through armor), **Glow** (armor that glows in the dark) and **Trim glow**
-(glowing trims and custom designs).
-
-Style and Trim also work on your real armor when no look is set. Each page has **All slots** to copy it to the
-other slots.
+Style and Trim also work on your real armor when no look is set. On a single slot, **All slots** copies that page's
+settings to the other slots. Items that aren't armor (like a glass block) are fitted to the armor shape automatically.
 
 The look also shows on the icons of the armor you're wearing, in your inventory (turn off with **Inv icons**). Tooltips
 keep the real item's name and add a "Vanity look" line.
@@ -42,16 +41,6 @@ Settings save to `config/vanity.json`. Only you see the cosmetics.
 **Held** and **Worn** save the exact item, not just its type: custom name, dye color, player-head skin and SkyBlock
 data all stay. Wear a SkyBlock piece, open its slot's tab and press **Worn**; you can then wear anything else and keep
 that look. Player-head helmets (most SkyBlock helmets) are drawn like a worn head, with their skin.
-
-### Non-armor items
-
-Put any other item or block in a slot and it's drawn fitted to the armor shape:
-- **Armor shape**: stretches the model to fill the armor box exactly. Best for blocks.
-- **Fit inside**: scales evenly, resting on the front of the armor. Best for flat items like swords.
-- **Vanilla size**: normal head-item size, like a pumpkin.
-
-Fine-tune with Move X/Y/Z (pixels; +Y up, +Z forward), Turn X/Y/Z (degrees) and Size. **Hide armor** hides your real
-armor in that slot.
 
 ## How fitting works
 

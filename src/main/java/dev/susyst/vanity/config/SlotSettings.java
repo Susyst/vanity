@@ -40,8 +40,10 @@ public final class SlotSettings {
 	public float opacity = 1.0F;
 	/** How much the armor glows in the dark, 0 to 1. */
 	public float glow;
-	/** Make trims and custom designs glow. */
-	public boolean trimGlow;
+	/** Old 0.9 on/off setting, read once and turned into {@link #trimGlowAmount}. */
+	public Boolean trimGlow;
+	/** How much trims and custom designs glow, 0 to 1. Kept soft: even 1 is a gentle glow. */
+	public float trimGlowAmount;
 	/** Particle rune worn on this piece. */
 	public Rune rune = new Rune();
 	public FitMode mode = FitMode.STRETCH;
@@ -139,12 +141,12 @@ public final class SlotSettings {
 		this.dyeColor = 0xA06540;
 		this.opacity = 1.0F;
 		this.glow = 0.0F;
-		this.trimGlow = false;
+		this.trimGlowAmount = 0.0F;
 	}
 
 	/** True if this slot's armor must be drawn by Vanity (see-through or glowing). */
 	public boolean hasCustomArmorRendering() {
-		return this.opacity < 0.995F || this.glow > 0.005F || this.trimGlow;
+		return this.opacity < 0.995F || this.glow > 0.005F || this.trimGlowAmount > 0.005F;
 	}
 
 	public void resetTrim() {
@@ -170,7 +172,7 @@ public final class SlotSettings {
 		this.dyeColor = other.dyeColor;
 		this.opacity = other.opacity;
 		this.glow = other.glow;
-		this.trimGlow = other.trimGlow;
+		this.trimGlowAmount = other.trimGlowAmount;
 	}
 
 	public void copyTrimFrom(SlotSettings other) {
@@ -210,7 +212,7 @@ public final class SlotSettings {
 		copy.dyeColor = this.dyeColor;
 		copy.opacity = this.opacity;
 		copy.glow = this.glow;
-		copy.trimGlow = this.trimGlow;
+		copy.trimGlowAmount = this.trimGlowAmount;
 		copy.rune = this.rune.copy();
 		copy.mode = this.mode;
 		copy.hideArmor = this.hideArmor;
@@ -253,6 +255,10 @@ public final class SlotSettings {
 		this.opacity = Math.max(0.1F, Math.min(1.0F, this.opacity));
 		if (!Float.isFinite(this.glow)) this.glow = 0.0F;
 		this.glow = Math.max(0.0F, Math.min(1.0F, this.glow));
+		if (Boolean.TRUE.equals(this.trimGlow) && this.trimGlowAmount <= 0.0F) this.trimGlowAmount = 0.4F;
+		this.trimGlow = null;
+		if (!Float.isFinite(this.trimGlowAmount)) this.trimGlowAmount = 0.0F;
+		this.trimGlowAmount = Math.max(0.0F, Math.min(1.0F, this.trimGlowAmount));
 		if (this.rune == null) this.rune = new Rune();
 		this.rune.sanitize();
 		if (!Float.isFinite(this.scale) || this.scale <= 0.0F) this.scale = 1.0F;

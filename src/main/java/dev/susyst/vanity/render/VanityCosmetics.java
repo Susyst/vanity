@@ -73,7 +73,7 @@ public final class VanityCosmetics {
 			data.armor[i] = ItemStack.EMPTY;
 			data.opacity[i] = 1.0F;
 			data.glow[i] = 0.0F;
-			data.trimGlow[i] = false;
+			data.trimGlow[i] = 0.0F;
 			if (!config.enabled) continue;
 
 			SlotSettings settings = config.get(slot);
@@ -87,7 +87,7 @@ public final class VanityCosmetics {
 			if (settings.hasDesign()) data.designs[i] = enabledLayers(settings);
 			data.opacity[i] = settings.opacity;
 			data.glow[i] = settings.glow;
-			data.trimGlow[i] = settings.trimGlow;
+			data.trimGlow[i] = settings.trimGlowAmount;
 
 			if (settings.hasCustomArmorRendering()) {
 				data.armor[i] = shown;

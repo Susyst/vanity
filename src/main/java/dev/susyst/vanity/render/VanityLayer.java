@@ -47,6 +47,9 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 	private static final int TRIM_ORDER = 11;
 	private static final int GLINT_ORDER = 12;
 	private static final int DESIGN_ORDER = 14;
+	private static final int DESIGN_GLOW_ORDER = 20;
+	/** Trim glow is a soft full-bright layer blended over the normal trim; 100% on the slider is this much. */
+	private static final float MAX_TRIM_GLOW = 0.45F;
 
 	private final ArmorModelSet<PlayerModel> armorModels;
 	private final EquipmentAssetManager equipmentAssets;
@@ -126,12 +129,20 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 			}
 		}
 
-		if (trim != null && (seeThrough || glowing || data.trimGlow[i])) {
+		if (trim != null) {
 			Identifier texture = trimTexture(trim.pattern().value().assetId(), layerType);
-			boolean trimGlow = data.trimGlow[i];
-			RenderType type = trimGlow ? VanityRenderTypes.armorGlow(texture) : VanityRenderTypes.armorTranslucent(texture);
-			int light = trimGlow ? LightCoordsUtil.FULL_BRIGHT : lightCoords;
-			collector.order(TRIM_ORDER).submitModel(model, state, poseStack, type, light, OverlayTexture.NO_OVERLAY, withAlpha(trimColor(trim), opacity), (UvMapping) null, 0);
+			int color = trimColor(trim);
+
+			// The game's own trim is under the see-through/glowing armor, so draw it again on top
+			if (seeThrough || glowing) {
+				collector.order(TRIM_ORDER).submitModel(model, state, poseStack, VanityRenderTypes.armorTranslucent(texture), lightCoords, OverlayTexture.NO_OVERLAY, withAlpha(color, opacity), (UvMapping) null, 0);
+			}
+
+			float trimGlow = data.trimGlow[i];
+
+			if (trimGlow > 0.005F) {
+				collector.order(TRIM_ORDER + 1).submitModel(model, state, poseStack, VanityRenderTypes.armorGlow(texture), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(color, trimGlow * MAX_TRIM_GLOW * opacity), (UvMapping) null, 0);
+			}
 		}
 
 		if (stack.hasFoil() && (seeThrough || glowing)) {
@@ -146,19 +157,19 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 		PlayerModel model = this.armorModels.get(slot.equipmentSlot);
 		EquipmentClientInfo.LayerType layerType = layerType(slot);
 		float opacity = data.opacity[i];
-		boolean glow = data.trimGlow[i];
+		float glow = data.trimGlow[i];
 
 		for (int k = 0; k < layers.length; k++) {
 			Identifier pattern = Identifier.tryParse(layers[k].pattern);
 			if (pattern == null) continue;
 
 			Identifier texture = trimTexture(pattern, layerType);
-			RenderType type = glow ? VanityRenderTypes.armorGlow(texture)
-					: opacity < 0.995F ? VanityRenderTypes.armorTranslucent(texture)
-					: RenderTypes.armorTrim(texture, false);
-			int color = withAlpha(layers[k].color, opacity);
-			int light = glow ? LightCoordsUtil.FULL_BRIGHT : lightCoords;
-			collector.order(DESIGN_ORDER + k).submitModel(model, state, poseStack, type, light, OverlayTexture.NO_OVERLAY, color, (UvMapping) null, state.outlineColor);
+			RenderType type = opacity < 0.995F ? VanityRenderTypes.armorTranslucent(texture) : RenderTypes.armorTrim(texture, false);
+			collector.order(DESIGN_ORDER + k).submitModel(model, state, poseStack, type, lightCoords, OverlayTexture.NO_OVERLAY, withAlpha(layers[k].color, opacity), (UvMapping) null, state.outlineColor);
+
+			if (glow > 0.005F) {
+				collector.order(DESIGN_GLOW_ORDER + k).submitModel(model, state, poseStack, VanityRenderTypes.armorGlow(texture), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(layers[k].color, glow * MAX_TRIM_GLOW * opacity), (UvMapping) null, 0);
+			}
 		}
 	}
 

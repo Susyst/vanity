@@ -451,14 +451,14 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.setScreen(() -> null);
 	}
 
-	private static void rune(Rune rune, RuneEffect effect, RuneShape shape, int color, float size, int amount) {
+	private static void rune(Rune rune, RuneEffect effect, RuneShape shape, int color, float size, int detail) {
 		rune.enabled = true;
 		rune.effect = effect;
 		rune.shape = shape;
 		rune.color = color;
 		rune.size = size;
-		rune.amount = amount;
-		rune.length = 14;
+		rune.detail = detail;
+		rune.length = 12;
 		rune.speed = 1.0F;
 	}
 
@@ -468,14 +468,14 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			VanityConfig config = VanityClient.config();
 			// Chest: netherite look, fully glowing, with a glowing gold rib trim
 			config.chest.glow = 1.0F;
-			config.chest.trimGlow = true;
+			config.chest.trimGlowAmount = 0.5F;
 			// Head: keep the custom design from before, make it glow
-			config.head.trimGlow = true;
+			config.head.trimGlowAmount = 0.5F;
 			// Legs: see-through
 			config.legs.opacity = 0.35F;
 			// Feet: real iron boots glowing, with the glowing yellow bolt design from before
 			config.feet.glow = 1.0F;
-			config.feet.trimGlow = true;
+			config.feet.trimGlowAmount = 0.5F;
 
 			check(drawnArmor(client, EquipmentSlot.LEGS).isEmpty(), "See-through leggings must not be drawn by the vanilla armor layer");
 			AvatarRenderState state = (AvatarRenderState) client.getEntityRenderDispatcher().getRenderer(client.player).createRenderState(client.player, 1.0F);
@@ -497,11 +497,10 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		singleplayer.getServer().runCommand("time set noon");
 		context.runOnClient(client -> {
 			VanityConfig config = VanityClient.config();
-			rune(config.head.rune, RuneEffect.DUST, RuneShape.HALO, 0x5BD2FF, 1.4F, 3);
-			rune(config.chest.rune, RuneEffect.DUST, RuneShape.WINGS, 0xFF4FD8, 1.2F, 6);
-			config.chest.rune.length = 18;
-			rune(config.legs.rune, RuneEffect.RAINBOW, RuneShape.SPIRAL, 0xFFFFFF, 1.0F, 2);
-			rune(config.feet.rune, RuneEffect.FLAME, RuneShape.TRAIL, 0xFFFFFF, 1.0F, 2);
+			rune(config.head.rune, RuneEffect.DUST, RuneShape.HALO, 0x5BD2FF, 1.2F, 16);
+			rune(config.chest.rune, RuneEffect.DUST, RuneShape.WINGS, 0xFF4FD8, 1.0F, 28);
+			rune(config.legs.rune, RuneEffect.RAINBOW, RuneShape.SPIRAL, 0xFFFFFF, 1.0F, 20);
+			rune(config.feet.rune, RuneEffect.FLAME, RuneShape.TRAIL, 0xFFFFFF, 1.0F, 14);
 		});
 		context.waitTicks(30);
 		context.takeScreenshot("23_runes_front");
@@ -511,12 +510,62 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		setCamera(context, CameraType.THIRD_PERSON_FRONT);
 
 		context.runOnClient(client -> {
-			rune(VanityClient.config().chest.rune, RuneEffect.SOUL_FLAME, RuneShape.ORBIT, 0xFFFFFF, 1.0F, 4);
-			rune(VanityClient.config().head.rune, RuneEffect.LIGHTNING, RuneShape.HALO, 0xFFFFFF, 1.0F, 3);
+			rune(VanityClient.config().chest.rune, RuneEffect.SOUL_FLAME, RuneShape.ORBIT, 0xFFFFFF, 1.0F, 24);
+			rune(VanityClient.config().head.rune, RuneEffect.LIGHTNING, RuneShape.HALO, 0xFFFFFF, 1.0F, 12);
 			VanityClient.config().legs.rune.enabled = false;
 		});
 		context.waitTicks(30);
 		context.takeScreenshot("25_runes_orbit_lightning");
+
+		// Low detail must still draw the whole shape (a dotted halo and wings), not a broken one
+		context.runOnClient(client -> {
+			rune(VanityClient.config().head.rune, RuneEffect.DUST, RuneShape.HALO, 0xFFD54F, 1.2F, 6);
+			rune(VanityClient.config().chest.rune, RuneEffect.DUST, RuneShape.WINGS, 0x5BD2FF, 1.0F, 10);
+			VanityClient.config().feet.rune.enabled = false;
+		});
+		context.waitTicks(30);
+		setCamera(context, CameraType.THIRD_PERSON_BACK);
+		context.waitTicks(15);
+		context.takeScreenshot("25b_runes_low_detail");
+		setCamera(context, CameraType.THIRD_PERSON_FRONT);
+
+		// All tab: one change applies to every piece
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			config.chest.rune.enabled = false;
+			config.legs.rune.enabled = false;
+		});
+		context.setScreen(() -> VanityScreen.allSlots(VanityScreen.Page.RUNE));
+		context.waitTicks(5);
+
+		// Click the Effect dropdown (same layout math as the screen), then pick "Rainbow" (row 2: None, Dust, Rainbow)
+		double[] spot = context.computeOnClient(client -> {
+			int width = client.getWindow().getGuiScaledWidth();
+			int previewRight = Math.max(110, (int) (width * 0.36F));
+			int panelX = previewRight + 14;
+			int panelW = Math.max(200, Math.min(width - panelX - 16, 300));
+			int halfW = (panelW - 4) / 2;
+			int rowTop = 86;
+			double scale = client.getWindow().getGuiScale();
+			return new double[] {(panelX + halfW / 2.0) * scale, (rowTop + 10) * scale, (rowTop + 21 + 2 + 2 * 14 + 7) * scale};
+		});
+		context.getInput().setCursorPos(spot[0], spot[1]);
+		context.getInput().pressMouse(0);
+		context.waitTicks(3);
+		context.takeScreenshot("25c_dropdown_open");
+		context.getInput().setCursorPos(spot[0], spot[2]);
+		context.getInput().pressMouse(0);
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				Rune rune = VanityClient.config().get(slot).rune;
+				check(rune.enabled && rune.effect == RuneEffect.RAINBOW, slot.label + " should get the Rainbow rune picked on the All tab, got " + rune.effect + " enabled=" + rune.enabled);
+			}
+		});
+		context.takeScreenshot("25d_all_slots_rainbow_picked");
+		context.setScreen(() -> null);
+		context.waitTicks(30);
+		context.takeScreenshot("25e_rainbow_runes_everywhere");
 
 		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.RUNE));
 		context.waitTicks(10);

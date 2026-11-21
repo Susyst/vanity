@@ -1,7 +1,6 @@
 package dev.susyst.vanity.render;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.particles.DustParticleOptions;
@@ -19,20 +18,25 @@ import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.VanityConfig;
 
 /**
- * Armor runes: particles around your armor every tick, in shapes (halo, orbit rings, spiral, wings, aura, trail).
- * Spawned client-side straight into the particle engine, so only you see them, they show even on low particle
- * settings, and each particle's lifetime is set by the rune's length so the shape stays crisp.
+ * Armor runes: particle shapes (halo, orbit rings, spiral, wings, aura, trail) around your armor.
+ *
+ * <p>A shape is a fixed set of evenly spaced points ({@link Rune#detail}). Each point is redrawn once every
+ * {@link Rune#length} ticks, staggered so a few are redrawn each tick. So the whole shape is always there and the
+ * number of particles stays steady: low detail is a clean dotted outline, high detail a solid one.
+ *
+ * <p>Particles go straight into the particle engine with their lifetime set, so only you see them and they show even on
+ * low particle settings.
  */
 public final class RuneParticles {
 	private static final RandomSource RANDOM = RandomSource.create();
+	private static final double GOLDEN_ANGLE = 2.399963;
 
 	private RuneParticles() {
 	}
 
 	public static void tick(Minecraft client) {
 		LocalPlayer player = client.player;
-		ClientLevel level = client.level;
-		if (player == null || level == null || client.isPaused()) return;
+		if (player == null || client.level == null || client.isPaused()) return;
 		if (player.isInvisible() || player.isSpectator()) return;
 
 		VanityConfig config = VanityClient.config();
@@ -48,10 +52,10 @@ public final class RuneParticles {
 		}
 	}
 
-	private static ParticleOptions particle(Rune rune, float time) {
+	private static ParticleOptions particle(Rune rune, float time, int point, int points) {
 		return switch (rune.effect) {
 			case DUST -> new DustParticleOptions(rune.color, rune.size);
-			case RAINBOW -> new DustParticleOptions(Mth.hsvToRgb((time * 0.01F + RANDOM.nextFloat() * 0.08F) % 1.0F, 0.85F, 1.0F), rune.size);
+			case RAINBOW -> new DustParticleOptions(Mth.hsvToRgb((time * 0.008F + (float) point / points) % 1.0F, 0.85F, 1.0F), rune.size);
 			case FLAME -> ParticleTypes.FLAME;
 			case SOUL_FLAME -> ParticleTypes.SOUL_FIRE_FLAME;
 			case COPPER_FLAME -> ParticleTypes.COPPER_FIRE_FLAME;
@@ -71,112 +75,101 @@ public final class RuneParticles {
 		};
 	}
 
-	/** Some particles fly off on their own; slow them down so the shape stays readable. */
-	private static double drift(RuneEffect effect) {
-		return switch (effect) {
-			case DUST, RAINBOW, FLAME, SOUL_FLAME, COPPER_FLAME, SPARKLE, LIGHTNING, GLOW, SHINE -> 0.0;
-			default -> 0.01;
+	/** A point of the shape, in player space: x = right, y = up from the feet, z = forward. */
+	private record Point(double x, double y, double z) {
+	}
+
+	private static Point shapePoint(RuneShape shape, int k, int n, float t, double height) {
+		return switch (shape) {
+			case HALO -> {
+				double a = Math.PI * 2 * k / n + t * 0.06;
+				yield new Point(Math.cos(a) * 0.36, height + 0.3, Math.sin(a) * 0.36);
+			}
+			case ORBIT -> {
+				// Two tilted rings spinning in opposite directions
+				boolean second = (k & 1) == 1;
+				int m = (n + 1) / 2;
+				double a = Math.PI * 2 * (k / 2) / m + (second ? -t : t) * 0.05;
+				double x = Math.cos(a) * 0.85;
+				double z = Math.sin(a) * 0.85;
+				double tilt = second ? -0.45 : 0.45;
+				yield second
+						? new Point(x * Math.cos(tilt), height * 0.6 + x * Math.sin(tilt), z)
+						: new Point(x, height * 0.6 + z * Math.sin(tilt), z * Math.cos(tilt));
+			}
+			case SPIRAL -> {
+				// Two strands winding up the body, turning slowly
+				boolean second = (k & 1) == 1;
+				int m = (n + 1) / 2;
+				double s = (k / 2 + 0.5) / m;
+				double a = s * Math.PI * 4 + (second ? Math.PI : 0) + t * 0.06;
+				yield new Point(Math.cos(a) * 0.55, s * height * 1.02, Math.sin(a) * 0.55);
+			}
+			case WINGS -> {
+				// Outline of two wings behind the back, flapping
+				double side = (k & 1) == 0 ? 1 : -1;
+				int m = (n + 1) / 2;
+				double u = (k / 2 + 0.5) / m;
+				double flap = 0.16 * Math.sin(t * 0.12);
+				double top = height * 0.76 + 0.55 * Math.sin(Math.PI * u * 0.9) - 0.4 * u * u;
+				// Every third point is a feather tip below the top edge
+				double feather = (k / 2) % 3 == 2 ? 0.3 * u : 0.0;
+				yield new Point(side * (0.18 + u), top - feather, -0.3 - (0.25 + flap) * u);
+			}
+			case AURA -> {
+				// Points spread evenly around the body, slowly turning
+				double a = k * GOLDEN_ANGLE + t * 0.03;
+				yield new Point(Math.cos(a) * 0.62, (k + 0.5) / n * height, Math.sin(a) * 0.62);
+			}
+			case TRAIL -> {
+				double a = Math.PI * 2 * k / n + t * 0.05;
+				yield new Point(Math.cos(a) * 0.62, 0.06, Math.sin(a) * 0.62);
+			}
 		};
 	}
 
 	private static void spawn(Minecraft client, LocalPlayer player, CosmeticSlot slot, Rune rune) {
-		float time = player.tickCount * rune.speed;
+		int tick = player.tickCount;
+		float time = tick * rune.speed;
 		double height = player.getBbHeight();
 		double yaw = Math.toRadians(player.yBodyRot);
-		// Player-relative axes: forward, right
 		double fx = -Math.sin(yaw);
 		double fz = Math.cos(yaw);
 		double rx = -fz;
 		double rz = fx;
 		RuneShape shape = rune.shapeFor(slot);
-		int count = rune.amount;
+		int points = rune.detail;
+		int length = rune.length;
+		boolean moving = player.getDeltaMovement().horizontalDistance() > 0.03;
 
-		for (int k = 0; k < count; k++) {
-			double side;
-			double up;
-			double forward;
-			double vy = 0.0;
+		for (int k = 0; k < points; k++) {
+			// Each point is redrawn once per `length` ticks, staggered across the points
+			if ((tick + k * length / points) % length != 0) continue;
 
-			switch (shape) {
-				case HALO -> {
-					double a = time * 0.15 + Math.PI * 2 * k / count + RANDOM.nextFloat() * 0.2;
-					side = Math.cos(a) * 0.34;
-					forward = Math.sin(a) * 0.34;
-					up = height + 0.28;
-				}
-				case ORBIT -> {
-					// Two tilted rings spinning in opposite directions around the chest
-					boolean second = k % 2 == 1;
-					double a = (second ? -time : time) * 0.13 + Math.PI * 2 * k / count;
-					double x = Math.cos(a) * 0.85;
-					double z = Math.sin(a) * 0.85;
-					double tilt = second ? -0.45 : 0.45;
-					side = second ? x * Math.cos(tilt) : x;
-					forward = second ? z : z * Math.cos(tilt);
-					up = height * 0.6 + (second ? x : z) * Math.sin(tilt);
-				}
-				case SPIRAL -> {
-					boolean strand = k % 2 == 1;
-					double phase = (time * 0.035 + (double) k / count * 0.5) % 1.0;
-					double a = time * 0.25 + (strand ? Math.PI : 0) + phase * Math.PI * 4;
-					side = Math.cos(a) * 0.55;
-					forward = Math.sin(a) * 0.55;
-					up = phase * height * 1.05;
-				}
-				case WINGS -> {
-					double wingSide = k % 2 == 0 ? 1 : -1;
-					double u = RANDOM.nextDouble();
-					double flap = 0.18 * Math.sin(time * 0.16);
-					double fill = RANDOM.nextDouble() * 0.4 * u;
-					side = wingSide * (0.18 + 1.0 * u);
-					up = height * 0.76 + 0.55 * Math.sin(Math.PI * u * 0.9) - 0.4 * u * u - fill;
-					forward = -0.3 - (0.25 + flap) * u;
-				}
-				case AURA -> {
-					double a = RANDOM.nextDouble() * Math.PI * 2;
-					double r = 0.35 + RANDOM.nextDouble() * 0.35;
-					side = Math.cos(a) * r;
-					forward = Math.sin(a) * r;
-					up = RANDOM.nextDouble() * height;
-					vy = 0.02;
-				}
-				case TRAIL -> {
-					double speed = player.getDeltaMovement().horizontalDistance();
+			Point p;
 
-					if (speed > 0.03) {
-						side = (RANDOM.nextDouble() - 0.5) * 0.5;
-						forward = -0.25 - RANDOM.nextDouble() * 0.3;
-						up = 0.08 + RANDOM.nextDouble() * 0.1;
-					} else {
-						double a = time * 0.12 + Math.PI * 2 * k / count;
-						side = Math.cos(a) * 0.62;
-						forward = Math.sin(a) * 0.62;
-						up = 0.06;
-					}
-				}
-				default -> {
-					side = 0;
-					forward = 0;
-					up = height * 0.5;
-				}
+			if (shape == RuneShape.TRAIL && moving) {
+				// While moving, the trail streams out behind your feet
+				p = new Point((RANDOM.nextDouble() - 0.5) * 0.5, 0.08 + RANDOM.nextDouble() * 0.1, -0.25 - RANDOM.nextDouble() * 0.3);
+			} else {
+				p = shapePoint(shape, k, points, time, height);
 			}
 
-			double x = player.getX() + rx * side + fx * forward;
-			double y = player.getY() + up;
-			double z = player.getZ() + rz * side + fz * forward;
-			double drift = drift(rune.effect);
-			double vx = (RANDOM.nextDouble() - 0.5) * drift;
-			double vz = (RANDOM.nextDouble() - 0.5) * drift;
+			double x = player.getX() + rx * p.x + fx * p.z;
+			double y = player.getY() + p.y;
+			double z = player.getZ() + rz * p.x + fz * p.z;
+			double vx = 0;
+			double vy = shape == RuneShape.AURA ? 0.012 : 0;
+			double vz = 0;
 
-			if (rune.effect == RuneEffect.MUSIC) {
-				// Note particles use the x speed as their color
-				vx = RANDOM.nextDouble();
-				vy = 0;
-				vz = 0;
+			// Note particles use the x speed as their color
+			if (rune.effect == RuneEffect.MUSIC) vx = (double) k / points;
+
+			Particle particle = client.particleEngine.createParticle(particle(rune, time, k, points), x, y, z, vx, vy, vz);
+
+			if (particle != null) {
+				particle.setLifetime(length + 2);
 			}
-
-			Particle particle = client.particleEngine.createParticle(particle(rune, time), x, y, z, vx, vy, vz);
-			if (particle != null) particle.setLifetime(rune.length);
 		}
 	}
 }

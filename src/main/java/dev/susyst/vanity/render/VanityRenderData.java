@@ -20,7 +20,7 @@ public final class VanityRenderData {
 	public final ItemStack[] armor = new ItemStack[CosmeticSlot.values().length];
 	public final float[] opacity = new float[CosmeticSlot.values().length];
 	public final float[] glow = new float[CosmeticSlot.values().length];
-	public final boolean[] trimGlow = new boolean[CosmeticSlot.values().length];
+	public final float[] trimGlow = new float[CosmeticSlot.values().length];
 
 	public VanityRenderData() {
 		Arrays.fill(this.armor, ItemStack.EMPTY);
@@ -38,7 +38,7 @@ public final class VanityRenderData {
 		Arrays.fill(this.armor, ItemStack.EMPTY);
 		Arrays.fill(this.opacity, 1.0F);
 		Arrays.fill(this.glow, 0.0F);
-		Arrays.fill(this.trimGlow, false);
+		Arrays.fill(this.trimGlow, 0.0F);
 
 		for (ItemStackRenderState item : this.items) {
 			item.clear();

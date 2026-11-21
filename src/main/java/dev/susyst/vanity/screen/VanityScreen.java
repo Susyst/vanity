@@ -8,17 +8,19 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
@@ -31,7 +33,10 @@ import net.minecraft.world.item.ItemStack;
 import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.ArmorSet;
 import dev.susyst.vanity.config.CosmeticSlot;
+import dev.susyst.vanity.config.GlintMode;
 import dev.susyst.vanity.config.Rune;
+import dev.susyst.vanity.config.RuneEffect;
+import dev.susyst.vanity.config.RuneShape;
 import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.TrimLayer;
 import dev.susyst.vanity.config.TrimMode;
@@ -40,8 +45,9 @@ import dev.susyst.vanity.config.VanityConfig;
 import dev.susyst.vanity.render.VanityCosmetics;
 
 /**
- * The wardrobe, in a frosted-glass style. Left: live preview. Right: pick a slot, then a page:
- * Look (what it looks like), Style (glint, dye), Trim (vanilla trims), Design (custom trims), Fit (non-armor items).
+ * The wardrobe, in a frosted-glass style. Left: live preview. Right: pick a slot (or All), then a page:
+ * Look, Style (glint, dye, opacity, glow), Trim, Design (custom trims) and Rune (particles).
+ * Every choice with more than two options is a dropdown.
  */
 public final class VanityScreen extends Screen {
 	private static final int ROW = 20;
@@ -49,6 +55,8 @@ public final class VanityScreen extends Screen {
 	private static final int GRAY = Glass.TEXT_DIM;
 	private static final int GREEN = 0xFF7CF5B0;
 	private static final int RED = 0xFFFF7A7A;
+	private static final int MENU_ROW = 14;
+	private static final int MENU_MAX_ROWS = 10;
 	/** The 16 dye colors, for the quick color rows. */
 	private static final List<Integer> DYE_COLORS = Trims.PALETTE.subList(0, 16);
 
@@ -57,8 +65,7 @@ public final class VanityScreen extends Screen {
 		STYLE("Style"),
 		TRIM("Trim"),
 		DESIGN("Design"),
-		RUNE("Rune"),
-		FIT("Fit");
+		RUNE("Rune");
 
 		final String label;
 
@@ -67,14 +74,32 @@ public final class VanityScreen extends Screen {
 		}
 	}
 
+	/** One entry of a dropdown: a label and an optional color sample (-1 for none). */
+	private record Option(String label, int swatch) {
+		static Option of(String label) {
+			return new Option(label, -1);
+		}
+	}
+
+	/** The dropdown that is open, under (or above) the button that opened it. */
+	private record Menu(int x, int y, int w, int anchorY, List<Option> options, int selected, IntConsumer onPick) {
+	}
+
 	private CosmeticSlot selected;
+	/** Editing all four slots at once: the Head slot is the template and changes are copied to the others. */
+	private boolean all;
 	private Page page;
 	private int designLayer;
 	private float previewYaw;
+	private Menu menu;
+	private int menuScroll;
 
 	private final List<GlassButton> slotTabs = new ArrayList<>();
+	private GlassButton allTab;
 	private final Map<Page, GlassButton> pageTabs = new EnumMap<>(Page.class);
 	private final Map<Page, List<AbstractWidget>> pageWidgets = new EnumMap<>(Page.class);
+	/** Widgets only shown when editing one slot. */
+	private final List<AbstractWidget> singleSlotWidgets = new ArrayList<>();
 	/** Actions run by {@link #refresh()} to show the current settings on the widgets. */
 	private final List<Runnable> syncers = new ArrayList<>();
 
@@ -85,7 +110,6 @@ public final class VanityScreen extends Screen {
 	private int panelX;
 	private int panelW;
 	private int contentY;
-	/** Where each page's hint text goes: just below its last row. */
 	private final Map<Page, Integer> hintY = new EnumMap<>(Page.class);
 
 	public VanityScreen() {
@@ -102,16 +126,28 @@ public final class VanityScreen extends Screen {
 		this.page = page;
 	}
 
+	/** Opens the wardrobe editing all four slots at once. */
+	public static VanityScreen allSlots(Page page) {
+		VanityScreen screen = new VanityScreen(CosmeticSlot.HEAD, page);
+		screen.all = true;
+		return screen;
+	}
+
 	private static VanityConfig config() {
 		return VanityClient.config();
 	}
 
+	/** The slot being edited; in All mode, the Head slot acts as the template. */
 	private SlotSettings current() {
-		return config().get(this.selected);
+		return config().get(this.all ? CosmeticSlot.HEAD : this.selected);
 	}
 
 	private TrimLayer layer() {
 		return this.current().design[this.designLayer];
+	}
+
+	private Rune rune() {
+		return this.current().rune;
 	}
 
 	private static Tooltip tip(String text) {
@@ -126,6 +162,36 @@ public final class VanityScreen extends Screen {
 		return Component.literal("██").withColor(rgb & 0xFFFFFF);
 	}
 
+	// ---- editing ----
+
+	/** After any edit: in All mode, copy the edited page's settings from the template to the other slots. */
+	private void changed() {
+		if (!this.all) return;
+		SlotSettings source = config().head;
+
+		for (CosmeticSlot slot : CosmeticSlot.values()) {
+			if (slot == CosmeticSlot.HEAD) continue;
+			SlotSettings target = config().get(slot);
+
+			switch (this.page) {
+				case LOOK -> {
+					target.invisible = source.invisible;
+					target.onlyWhenWorn = source.onlyWhenWorn;
+				}
+				case STYLE -> target.copyStyleFrom(source);
+				case TRIM -> target.copyTrimFrom(source);
+				case DESIGN -> target.copyDesignFrom(source);
+				case RUNE -> target.rune = source.rune.copy();
+			}
+		}
+	}
+
+	private void applyToAll(Consumer<SlotSettings> copy) {
+		for (CosmeticSlot slot : CosmeticSlot.values()) {
+			if (slot != this.selected) copy.accept(config().get(slot));
+		}
+	}
+
 	// ---- widget helpers ----
 
 	private <T extends AbstractWidget> T on(Page page, T widget) {
@@ -134,7 +200,7 @@ public final class VanityScreen extends Screen {
 		return widget;
 	}
 
-	/** A button that runs the action, then refreshes the screen. Page null means always visible. */
+	/** A page button that edits settings: runs the action, applies it to all slots in All mode, refreshes. */
 	private GlassButton button(Page page, int x, int y, int w, String label, Runnable action) {
 		return this.button(page, x, y, w, label, GlassButton.Style.NORMAL, action);
 	}
@@ -142,6 +208,7 @@ public final class VanityScreen extends Screen {
 	private GlassButton button(Page page, int x, int y, int w, String label, GlassButton.Style style, Runnable action) {
 		GlassButton button = new GlassButton(x, y, w, ROW, Component.literal(label), b -> {
 			action.run();
+			if (page != null) this.changed();
 			this.refresh();
 		}, style);
 		return page == null ? this.addRenderableWidget(button) : this.on(page, button);
@@ -149,6 +216,29 @@ public final class VanityScreen extends Screen {
 
 	private void sync(Runnable syncer) {
 		this.syncers.add(syncer);
+	}
+
+	/** A dropdown: a button showing the current choice; clicking it opens a list of options. */
+	private GlassButton dropdown(Page page, int x, int y, int w, String title, Supplier<List<Option>> options, IntSupplier current, IntConsumer onPick) {
+		GlassButton button = new GlassButton(x, y, w, ROW, Component.empty(), b -> {
+			List<Option> list = options.get();
+			this.menu = new Menu(x, y + ROW + 1, w, y, list, current.getAsInt(), index -> {
+				onPick.accept(index);
+				this.changed();
+			});
+			int selectedIndex = Math.max(0, current.getAsInt());
+			this.menuScroll = Math.max(0, Math.min(selectedIndex - MENU_MAX_ROWS / 2, list.size() - MENU_MAX_ROWS));
+		}, GlassButton.Style.NORMAL);
+		this.on(page, button);
+		this.sync(() -> {
+			List<Option> list = options.get();
+			int index = current.getAsInt();
+			String value = index >= 0 && index < list.size() ? list.get(index).label() : "Custom";
+			MutableComponent label = Component.literal(title.isEmpty() ? value : title + ": " + value);
+			if (index >= 0 && index < list.size() && list.get(index).swatch() >= 0) label.append(" ").append(swatch(list.get(index).swatch()));
+			button.setMessage(label.append(Component.literal("  ▾").withColor(0x8FA3B8)));
+		});
+		return button;
 	}
 
 	/** A row of dye-color swatches; the current color is outlined. */
@@ -177,6 +267,7 @@ public final class VanityScreen extends Screen {
 				int rgb = get.getAsInt();
 				int channel = (int) Math.round(v) & 0xFF;
 				set.accept((rgb & ~(0xFF << shift)) | (channel << shift));
+				this.changed();
 				this.refresh();
 			}));
 			this.sync(() -> slider.setRealValue((get.getAsInt() >> shift) & 0xFF));
@@ -194,18 +285,13 @@ public final class VanityScreen extends Screen {
 
 			if (hex.matches("[0-9a-fA-F]{6}")) {
 				set.accept(Integer.parseInt(hex, 16));
+				this.changed();
 				this.refresh();
 			}
 		});
 		this.sync(() -> {
 			if (!box.isFocused()) box.setValue(String.format(Locale.ROOT, "#%06X", get.getAsInt() & 0xFFFFFF));
 		});
-	}
-
-	private void applyToAll(Consumer<SlotSettings> copy) {
-		for (CosmeticSlot slot : CosmeticSlot.values()) {
-			if (slot != this.selected) copy.accept(config().get(slot));
-		}
 	}
 
 	private interface FloatGetter {
@@ -216,21 +302,67 @@ public final class VanityScreen extends Screen {
 		void set(SlotSettings settings, float value);
 	}
 
-	private void fitSlider(int x, int y, int w, String label, double min, double max, double step, String format, FloatGetter get, FloatSetter set) {
-		this.slider(Page.FIT, x, y, w, label, min, max, step, format, get, set);
-	}
-
 	private void slider(Page page, int x, int y, int w, String label, double min, double max, double step, String format, FloatGetter get, FloatSetter set) {
 		ValueSlider slider = this.on(page, new ValueSlider(x, y, w, ROW, label, min, max, step, format, 0, v -> {
 			if (this.syncing) return;
 			set.set(this.current(), (float) v);
+			this.changed();
 			this.refresh();
 		}));
 		this.sync(() -> slider.setRealValue(get.get(this.current())));
 	}
 
-	private Rune rune() {
-		return this.current().rune;
+	/** "Copy to the other three slots", shown only when editing one slot. */
+	private void copyToAllButton(Page page, int x, int y, int w, String what, Consumer<SlotSettings> copy) {
+		GlassButton button = this.button(page, x, y, w, "All slots", () -> this.applyToAll(copy));
+		button.setTooltip(tip("Copy this slot's " + what + " to the other three slots"));
+		this.singleSlotWidgets.add(button);
+	}
+
+	// ---- option lists ----
+
+	private static List<Option> armorSetOptions() {
+		List<Option> options = new ArrayList<>();
+		options.add(Option.of("Real armor"));
+		for (ArmorSet set : ArmorSet.values()) options.add(Option.of(set.label));
+		return options;
+	}
+
+	private static int armorSetIndex() {
+		ArmorSet set = ArmorSet.wornBy(config());
+		if (set != null) return set.ordinal() + 1;
+		return ArmorSet.noneWorn(config()) ? 0 : -1;
+	}
+
+	private static List<Option> patternOptions() {
+		List<Option> options = new ArrayList<>();
+		for (String name : Trims.PATTERNS) options.add(Option.of(Trims.displayName(name)));
+		return options;
+	}
+
+	private static int patternIndex(String id) {
+		return Trims.PATTERNS.indexOf(id.startsWith("minecraft:") ? id.substring(10) : id);
+	}
+
+	private static List<Option> materialOptions() {
+		List<Option> options = new ArrayList<>();
+		for (String name : Trims.MATERIALS) options.add(new Option(Trims.displayName(name), Trims.materialColor(name)));
+		return options;
+	}
+
+	private static <E extends Enum<E>> List<Option> enumOptions(E[] values, java.util.function.Function<E, String> label) {
+		List<Option> options = new ArrayList<>();
+		for (E value : values) options.add(Option.of(label.apply(value)));
+		return options;
+	}
+
+	private List<Option> runeEffectOptions() {
+		List<Option> options = new ArrayList<>();
+		options.add(Option.of("None"));
+		for (RuneEffect effect : RuneEffect.values()) {
+			options.add(effect.colorable ? new Option(effect.label, this.rune().color) : Option.of(effect.label));
+		}
+		return options;
 	}
 
 	// ---- layout ----
@@ -238,9 +370,11 @@ public final class VanityScreen extends Screen {
 	@Override
 	protected void init() {
 		this.initialized = false;
+		this.menu = null;
 		this.slotTabs.clear();
 		this.pageTabs.clear();
 		this.pageWidgets.clear();
+		this.singleSlotWidgets.clear();
 		this.syncers.clear();
 
 		this.previewRight = Math.max(110, (int) (this.width * 0.36F));
@@ -250,21 +384,24 @@ public final class VanityScreen extends Screen {
 		int thirdW = (this.panelW - GAP * 2) / 3;
 		int x2 = this.panelX + thirdW + GAP;
 		int x3 = this.panelX + 2 * (thirdW + GAP);
-		int arrowW = 20;
-		int labelW = this.panelW - 2 * (arrowW + GAP);
 		int step = ROW + GAP;
 
-		// Slot tabs (segmented control)
+		// Slot tabs: All, Head, Chest, Legs, Feet
 		int y = 32;
 		CosmeticSlot[] slots = CosmeticSlot.values();
-		int tabW = (this.panelW - 2 * 3) / 4;
+		int tabW = (this.panelW - 2 * slots.length) / (slots.length + 1);
+		this.allTab = this.button(null, this.panelX, y, tabW, "All", GlassButton.Style.SEGMENT, () -> {
+			this.all = true;
+			this.syncItemBox();
+		});
+		this.allTab.setTooltip(tip("Change all four armor pieces at once"));
 
 		for (int i = 0; i < slots.length; i++) {
 			CosmeticSlot slot = slots[i];
-			this.slotTabs.add(this.button(null, this.panelX + i * (tabW + 2), y, tabW, slot.label, GlassButton.Style.SEGMENT, () -> this.select(slot)));
+			this.slotTabs.add(this.button(null, this.panelX + (i + 1) * (tabW + 2), y, tabW, slot.label, GlassButton.Style.SEGMENT, () -> this.select(slot)));
 		}
 
-		// Page tabs (underlined text tabs)
+		// Page tabs
 		y += step;
 		Page[] pages = Page.values();
 		int pageW = this.panelW / pages.length;
@@ -280,21 +417,16 @@ public final class VanityScreen extends Screen {
 		int r2 = r1 + step;
 		int r3 = r2 + step;
 		int r4 = r3 + step;
-		this.hintY.put(Page.LOOK, r4 + 2);
+		for (Page p : pages) this.hintY.put(p, r4 + step + 2);
 		this.hintY.put(Page.TRIM, r4 + 2);
-		this.hintY.put(Page.DESIGN, r4 + step + 2);
-		this.hintY.put(Page.RUNE, r4 + step + 2);
-		this.hintY.put(Page.STYLE, r4 + step + 2);
-		this.hintY.put(Page.FIT, r4 + 2);
 
 		// ---- Look ----
-		Button set = this.button(Page.LOOK, this.panelX, r0, this.panelW, "", this::cycleArmorSet);
-		set.setTooltip(tip("Change how all four slots look at once. Your real armor stays the same; only the look changes."));
-		this.sync(() -> {
-			ArmorSet armorSet = ArmorSet.wornBy(config());
-			String label = armorSet != null ? armorSet.label : ArmorSet.noneWorn(config()) ? "Real armor" : "Custom";
-			set.setMessage(Component.literal("All slots: " + label));
-		});
+		this.dropdown(Page.LOOK, this.panelX, r0, this.panelW, "All slots look like", VanityScreen::armorSetOptions, VanityScreen::armorSetIndex, index -> {
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				config().get(slot).setLook(index == 0 ? "" : ArmorSet.values()[index - 1].itemId(slot));
+			}
+			this.syncItemBox();
+		}).setTooltip(tip("Change how all four slots look. Your real armor stays the same; only the look changes."));
 
 		int smallW = 36;
 		int boxW = this.panelW - 3 * (smallW + GAP);
@@ -306,30 +438,33 @@ public final class VanityScreen extends Screen {
 			this.current().setLook(value.trim());
 			this.refresh();
 		});
-		this.button(Page.LOOK, this.panelX + boxW + GAP, r1, smallW, "Held", this::useHeldItem)
-				.setTooltip(tip("Use the exact item in your main hand, including its name, dye, head skin and SkyBlock data"));
-		this.button(Page.LOOK, this.panelX + boxW + GAP + (smallW + GAP), r1, smallW, "Worn", this::useWornItem)
-				.setTooltip(tip("Save the look of what you're wearing in this slot now (e.g. a SkyBlock piece), then wear anything else"));
-		this.button(Page.LOOK, this.panelX + boxW + GAP + 2 * (smallW + GAP), r1, smallW, "Clear", () -> {
+		this.singleSlotWidgets.add(this.itemBox);
+
+		GlassButton held = this.button(Page.LOOK, this.panelX + boxW + GAP, r1, smallW, "Held", this::useHeldItem);
+		held.setTooltip(tip("Use the exact item in your main hand, including its name, dye, head skin and SkyBlock data"));
+		GlassButton worn = this.button(Page.LOOK, this.panelX + boxW + GAP + (smallW + GAP), r1, smallW, "Worn", this::useWornItem);
+		worn.setTooltip(tip("Save the look of what you're wearing in this slot now (e.g. a SkyBlock piece), then wear anything else"));
+		GlassButton clear = this.button(Page.LOOK, this.panelX + boxW + GAP + 2 * (smallW + GAP), r1, smallW, "Clear", () -> {
 			this.current().clearLook();
 			this.syncItemBox();
-		}).setTooltip(tip("Go back to your real armor in this slot"));
+		});
+		clear.setTooltip(tip("Go back to your real armor in this slot"));
+		this.singleSlotWidgets.addAll(List.of(held, worn, clear));
 
-		// r2 holds the status line, toggles go below it
-		Button invisible = this.button(Page.LOOK, this.panelX, r3, halfW, "", () -> this.current().invisible = !this.current().invisible);
+		GlassButton invisible = this.button(Page.LOOK, this.panelX, r3, halfW, "", () -> this.current().invisible = !this.current().invisible);
 		invisible.setTooltip(tip("Show nothing in this slot, not even your real armor"));
 		this.sync(() -> invisible.setMessage(Component.literal("Invisible: " + onOff(this.current().invisible))));
 
-		Button wornOnly = this.button(Page.LOOK, this.panelX + halfW + GAP, r3, halfW, "", () -> this.current().onlyWhenWorn = !this.current().onlyWhenWorn);
-		wornOnly.setTooltip(tip("Hide: the look disappears when you take the armor off. Show: it stays with nothing equipped."));
+		GlassButton wornOnly = this.button(Page.LOOK, this.panelX + halfW + GAP, r3, halfW, "", () -> this.current().onlyWhenWorn = !this.current().onlyWhenWorn);
+		wornOnly.setTooltip(tip("Hide: the look and rune go away when you take the armor off. Show: they stay with nothing equipped."));
 		this.sync(() -> wornOnly.setMessage(Component.literal("No armor: " + (this.current().onlyWhenWorn ? "Hide" : "Show"))));
 
 		// ---- Style ----
-		Button glint = this.button(Page.STYLE, this.panelX, r0, halfW, "", () -> this.current().glint = this.current().glint.next());
-		glint.setTooltip(tip("Enchantment shine. Like real: shine if the armor you're wearing is enchanted."));
-		this.sync(() -> glint.setMessage(Component.literal("Glint: " + this.current().glint.label)));
+		this.dropdown(Page.STYLE, this.panelX, r0, halfW, "Glint", () -> enumOptions(GlintMode.values(), g -> g.label), () -> this.current().glint.ordinal(),
+				index -> this.current().glint = GlintMode.values()[index])
+				.setTooltip(tip("Enchantment shine. Like real: shine if the armor you're wearing is enchanted."));
 
-		Button dye = this.button(Page.STYLE, this.panelX + halfW + GAP, r0, halfW, "", () -> this.current().customDye = !this.current().customDye);
+		GlassButton dye = this.button(Page.STYLE, this.panelX + halfW + GAP, r0, halfW, "", () -> this.current().customDye = !this.current().customDye);
 		dye.setTooltip(tip("Recolor leather armor with a color below"));
 		this.sync(() -> {
 			MutableComponent label = Component.literal("Dye: " + onOff(this.current().customDye));
@@ -345,33 +480,26 @@ public final class VanityScreen extends Screen {
 		this.colorSliders(Page.STYLE, r2, thirdW, () -> this.current().dyeColor, setDye);
 		this.hexBox(Page.STYLE, this.panelX, r3, thirdW, () -> this.current().dyeColor, setDye);
 		this.button(Page.STYLE, x2, r3, thirdW, "Reset", () -> this.current().resetStyle());
-		this.button(Page.STYLE, x3, r3, thirdW, "All slots", () -> this.applyToAll(s -> s.copyStyleFrom(this.current())))
-				.setTooltip(tip("Copy this slot's glint, dye, opacity and glow to the other three slots"));
+		this.copyToAllButton(Page.STYLE, x3, r3, thirdW, "glint, dye, opacity and glow", s -> s.copyStyleFrom(this.current()));
 
 		this.slider(Page.STYLE, this.panelX, r4, thirdW, "Opacity", 10, 100, 5, "%.0f%%", s -> s.opacity * 100.0F, (s, v) -> s.opacity = v / 100.0F);
 		this.slider(Page.STYLE, x2, r4, thirdW, "Glow", 0, 100, 5, "%.0f%%", s -> s.glow * 100.0F, (s, v) -> s.glow = v / 100.0F);
-		GlassButton trimGlow = this.button(Page.STYLE, x3, r4, thirdW, "", () -> this.current().trimGlow = !this.current().trimGlow);
-		trimGlow.setTooltip(tip("Make this slot's trim and custom design glow in the dark"));
-		this.sync(() -> trimGlow.setMessage(Component.literal("Trim glow: " + onOff(this.current().trimGlow))));
+		this.slider(Page.STYLE, x3, r4, thirdW, "Trim glow", 0, 100, 5, "%.0f%%", s -> s.trimGlowAmount * 100.0F, (s, v) -> s.trimGlowAmount = v / 100.0F);
 
 		// ---- Trim ----
-		Button trimMode = this.button(Page.TRIM, this.panelX, r0, this.panelW, "", () -> this.current().trim = this.current().trim.next());
-		trimMode.setTooltip(tip("Your armor's: keep the trim of what you're wearing. None: no trim. Pick: choose a pattern and material below."));
-		this.sync(() -> trimMode.setMessage(Component.literal("Trim: " + this.current().trim.label)));
-
-		this.button(Page.TRIM, this.panelX, r1, arrowW, "<", () -> this.pickTrim(Trims.step(Trims.PATTERNS, this.current().trimPattern, -1), null));
-		Button pattern = this.button(Page.TRIM, this.panelX + arrowW + GAP, r1, labelW, "", () -> this.pickTrim(Trims.step(Trims.PATTERNS, this.current().trimPattern, 1), null));
-		this.button(Page.TRIM, this.panelX + this.panelW - arrowW, r1, arrowW, ">", () -> this.pickTrim(Trims.step(Trims.PATTERNS, this.current().trimPattern, 1), null));
-		this.sync(() -> pattern.setMessage(Component.literal("Pattern: " + Trims.displayName(this.current().trimPattern))));
-
-		this.button(Page.TRIM, this.panelX, r2, arrowW, "<", () -> this.pickTrim(null, Trims.step(Trims.MATERIALS, this.current().trimMaterial, -1)));
-		Button material = this.button(Page.TRIM, this.panelX + arrowW + GAP, r2, labelW, "", () -> this.pickTrim(null, Trims.step(Trims.MATERIALS, this.current().trimMaterial, 1)));
-		this.button(Page.TRIM, this.panelX + this.panelW - arrowW, r2, arrowW, ">", () -> this.pickTrim(null, Trims.step(Trims.MATERIALS, this.current().trimMaterial, 1)));
-		this.sync(() -> material.setMessage(Component.literal("Material: " + Trims.displayName(this.current().trimMaterial))));
-
+		this.dropdown(Page.TRIM, this.panelX, r0, this.panelW, "Trim", () -> enumOptions(TrimMode.values(), m -> m.label), () -> this.current().trim.ordinal(),
+				index -> this.current().trim = TrimMode.values()[index])
+				.setTooltip(tip("Your armor's: keep the trim of what you're wearing. None: no trim. Pick: the pattern and material below."));
+		this.dropdown(Page.TRIM, this.panelX, r1, this.panelW, "Pattern", VanityScreen::patternOptions, () -> patternIndex(this.current().trimPattern), index -> {
+			this.current().trimPattern = Trims.id(Trims.PATTERNS.get(index));
+			this.current().trim = TrimMode.PICK;
+		});
+		this.dropdown(Page.TRIM, this.panelX, r2, this.panelW, "Material", VanityScreen::materialOptions, () -> Trims.MATERIALS.indexOf(stripNamespace(this.current().trimMaterial)), index -> {
+			this.current().trimMaterial = Trims.id(Trims.MATERIALS.get(index));
+			this.current().trim = TrimMode.PICK;
+		});
 		this.button(Page.TRIM, this.panelX, r3, halfW, "Reset", () -> this.current().resetTrim());
-		this.button(Page.TRIM, this.panelX + halfW + GAP, r3, halfW, "All slots", () -> this.applyToAll(s -> s.copyTrimFrom(this.current())))
-				.setTooltip(tip("Copy this slot's trim to the other three slots"));
+		this.copyToAllButton(Page.TRIM, this.panelX + halfW + GAP, r3, halfW, "trim", s -> s.copyTrimFrom(this.current()));
 
 		// ---- Design ----
 		int layerW = (this.panelW - GAP * 3) / 4;
@@ -382,20 +510,20 @@ public final class VanityScreen extends Screen {
 			this.sync(() -> {
 				TrimLayer l = this.current().design[index];
 				MutableComponent label = Component.literal("Layer " + (index + 1));
-				if (l.enabled) label.append(" ").append(Component.literal("\u2588").withColor(l.color & 0xFFFFFF));
+				if (l.enabled) label.append(" ").append(Component.literal("█").withColor(l.color & 0xFFFFFF));
 				tab.setMessage(label);
 				tab.selected = this.designLayer == index;
 			});
 		}
 
-		Button layerOn = this.button(Page.DESIGN, this.panelX + 3 * (layerW + GAP), r0, layerW, "", () -> this.layer().enabled = !this.layer().enabled);
+		GlassButton layerOn = this.button(Page.DESIGN, this.panelX + 3 * (layerW + GAP), r0, layerW, "", () -> this.layer().enabled = !this.layer().enabled);
 		layerOn.setTooltip(tip("Show or hide this layer"));
 		this.sync(() -> layerOn.setMessage(Component.literal(this.layer().enabled ? "Shown" : "Hidden")));
 
-		this.button(Page.DESIGN, this.panelX, r1, arrowW, "<", () -> this.pickLayerPattern(-1));
-		Button layerPattern = this.button(Page.DESIGN, this.panelX + arrowW + GAP, r1, labelW, "", () -> this.pickLayerPattern(1));
-		this.button(Page.DESIGN, this.panelX + this.panelW - arrowW, r1, arrowW, ">", () -> this.pickLayerPattern(1));
-		this.sync(() -> layerPattern.setMessage(Component.literal("Pattern: " + Trims.displayName(this.layer().pattern))));
+		this.dropdown(Page.DESIGN, this.panelX, r1, this.panelW, "Pattern", VanityScreen::patternOptions, () -> patternIndex(this.layer().pattern), index -> {
+			this.layer().pattern = Trims.id(Trims.PATTERNS.get(index));
+			this.layer().enabled = true;
+		});
 
 		IntConsumer setLayerColor = color -> {
 			this.layer().color = color;
@@ -405,79 +533,52 @@ public final class VanityScreen extends Screen {
 		this.colorSliders(Page.DESIGN, r3, thirdW, () -> this.layer().color, setLayerColor);
 		this.hexBox(Page.DESIGN, this.panelX, r4, thirdW, () -> this.layer().color, setLayerColor);
 		this.button(Page.DESIGN, x2, r4, thirdW, "Clear", () -> this.current().resetDesign());
-		this.button(Page.DESIGN, x3, r4, thirdW, "All slots", () -> this.applyToAll(s -> s.copyDesignFrom(this.current())))
-				.setTooltip(tip("Copy this slot's design to the other three slots"));
+		this.copyToAllButton(Page.DESIGN, x3, r4, thirdW, "design", s -> s.copyDesignFrom(this.current()));
 
 		// ---- Rune ----
-		int runeOnW = 64;
-		int effectLabelW = this.panelW - runeOnW - 2 * arrowW - 3 * GAP;
-		GlassButton runeOn = this.button(Page.RUNE, this.panelX, r0, runeOnW, "", GlassButton.Style.SEGMENT, () -> this.rune().enabled = !this.rune().enabled);
-		this.sync(() -> {
-			runeOn.setMessage(Component.literal(this.rune().enabled ? "Rune ON" : "Rune OFF"));
-			runeOn.selected = this.rune().enabled;
+		this.dropdown(Page.RUNE, this.panelX, r0, halfW, "Effect", this::runeEffectOptions, () -> this.rune().enabled ? this.rune().effect.ordinal() + 1 : 0, index -> {
+			this.rune().enabled = index > 0;
+			if (index > 0) this.rune().effect = RuneEffect.values()[index - 1];
 		});
-		int effectX = this.panelX + runeOnW + GAP;
-		this.button(Page.RUNE, effectX, r0, arrowW, "<", () -> this.pickRuneEffect(-1));
-		GlassButton effect = this.button(Page.RUNE, effectX + arrowW + GAP, r0, effectLabelW, "", () -> this.pickRuneEffect(1));
-		this.button(Page.RUNE, this.panelX + this.panelW - arrowW, r0, arrowW, ">", () -> this.pickRuneEffect(1));
-		this.sync(() -> effect.setMessage(Component.literal(this.rune().effect.label)));
-
-		int resetW = 50;
-		int shapeLabelW = this.panelW - resetW - 2 * arrowW - 3 * GAP;
-		this.button(Page.RUNE, this.panelX, r1, arrowW, "<", () -> this.pickRuneShape(-1));
-		GlassButton shape = this.button(Page.RUNE, this.panelX + arrowW + GAP, r1, shapeLabelW, "", () -> this.pickRuneShape(1));
-		this.button(Page.RUNE, this.panelX + arrowW + GAP + shapeLabelW + GAP, r1, arrowW, ">", () -> this.pickRuneShape(1));
-		this.button(Page.RUNE, this.panelX + this.panelW - resetW, r1, resetW, "Reset", () -> {
-			boolean wasOn = this.rune().enabled;
-			this.current().rune = new Rune();
-			this.current().rune.enabled = wasOn;
-		});
-		this.sync(() -> shape.setMessage(Component.literal("Shape: " + this.rune().shapeFor(this.selected).label)));
+		this.dropdown(Page.RUNE, this.panelX + halfW + GAP, r0, halfW, "Shape", () -> enumOptions(RuneShape.values(), s -> s.label),
+				() -> this.rune().shapeFor(this.all ? CosmeticSlot.HEAD : this.selected).ordinal(),
+				index -> this.rune().shape = RuneShape.values()[index]);
 
 		IntConsumer setRuneColor = color -> {
 			Rune rune = this.rune();
 			rune.color = color;
-			rune.enabled = true;
-			if (!rune.effect.colorable) rune.effect = dev.susyst.vanity.config.RuneEffect.DUST;
+			if (!rune.enabled || !rune.effect.colorable) {
+				rune.enabled = true;
+				rune.effect = RuneEffect.DUST;
+			}
 		};
-		this.colorRow(Page.RUNE, r2, () -> this.rune().effect.colorable ? this.rune().color : -1, setRuneColor);
-		this.slider(Page.RUNE, this.panelX, r3, thirdW, "Size", 0.5, 3.0, 0.1, "%.1f", s -> s.rune.size, (s, v) -> s.rune.size = v);
-		this.slider(Page.RUNE, x2, r3, thirdW, "Amount", 1, 8, 1, "%.0f", s -> s.rune.amount, (s, v) -> s.rune.amount = Math.round(v));
-		this.slider(Page.RUNE, x3, r3, thirdW, "Length", 4, 40, 1, "%.0f", s -> s.rune.length, (s, v) -> s.rune.length = Math.round(v));
-		this.hexBox(Page.RUNE, this.panelX, r4, thirdW, () -> this.rune().color, setRuneColor);
-		this.slider(Page.RUNE, x2, r4, thirdW, "Speed", 0.25, 3.0, 0.25, "%.2f", s -> s.rune.speed, (s, v) -> s.rune.speed = v);
-		GlassButton firstPerson = this.button(Page.RUNE, x3, r4, thirdW, "", () -> config().runesInFirstPerson = !config().runesInFirstPerson);
+		this.colorRow(Page.RUNE, r1, () -> this.rune().enabled && this.rune().effect.colorable ? this.rune().color : -1, setRuneColor);
+		this.slider(Page.RUNE, this.panelX, r2, thirdW, "Size", 0.5, 3.0, 0.1, "%.1f", s -> s.rune.size, (s, v) -> s.rune.size = v);
+		this.slider(Page.RUNE, x2, r2, thirdW, "Detail", 6, 40, 1, "%.0f", s -> s.rune.detail, (s, v) -> s.rune.detail = Math.round(v));
+		this.slider(Page.RUNE, x3, r2, thirdW, "Length", 4, 40, 1, "%.0f", s -> s.rune.length, (s, v) -> s.rune.length = Math.round(v));
+		this.hexBox(Page.RUNE, this.panelX, r3, thirdW, () -> this.rune().color, setRuneColor);
+		this.slider(Page.RUNE, x2, r3, thirdW, "Speed", 0.25, 3.0, 0.25, "%.2f", s -> s.rune.speed, (s, v) -> s.rune.speed = v);
+		GlassButton firstPerson = this.button(Page.RUNE, x3, r3, thirdW, "", () -> config().runesInFirstPerson = !config().runesInFirstPerson);
 		firstPerson.setTooltip(tip("Also show runes in first person (they can get in your way)"));
 		this.sync(() -> firstPerson.setMessage(Component.literal("1st person: " + onOff(config().runesInFirstPerson))));
-
-		// ---- Fit (non-armor items) ----
-		Button mode = this.button(Page.FIT, this.panelX, r0, thirdW, "", () -> this.current().mode = this.current().mode.next());
-		this.sync(() -> {
-			mode.setMessage(Component.literal("Fit: " + this.current().mode.label));
-			mode.setTooltip(tip(this.current().mode.description));
-		});
-		Button hide = this.button(Page.FIT, x2, r0, thirdW, "", () -> this.current().hideArmor = !this.current().hideArmor);
-		hide.setTooltip(tip("Hide your real armor in this slot while the item is shown"));
-		this.sync(() -> hide.setMessage(Component.literal("Hide armor: " + onOff(this.current().hideArmor))));
-		this.button(Page.FIT, x3, r0, thirdW, "Reset", () -> this.current().resetTransform());
-
-		this.fitSlider(this.panelX, r1, thirdW, "Move X", -16, 16, 0.5, "%.1f", s -> s.offsetX, (s, v) -> s.offsetX = v);
-		this.fitSlider(x2, r1, thirdW, "Move Y", -16, 16, 0.5, "%.1f", s -> s.offsetY, (s, v) -> s.offsetY = v);
-		this.fitSlider(x3, r1, thirdW, "Move Z", -16, 16, 0.5, "%.1f", s -> s.offsetZ, (s, v) -> s.offsetZ = v);
-		this.fitSlider(this.panelX, r2, thirdW, "Turn X", -180, 180, 5, "%.0f", s -> s.rotX, (s, v) -> s.rotX = v);
-		this.fitSlider(x2, r2, thirdW, "Turn Y", -180, 180, 5, "%.0f", s -> s.rotY, (s, v) -> s.rotY = v);
-		this.fitSlider(x3, r2, thirdW, "Turn Z", -180, 180, 5, "%.0f", s -> s.rotZ, (s, v) -> s.rotZ = v);
-		this.fitSlider(this.panelX, r3, this.panelW, "Size", 0.25, 3.0, 0.05, "%.2f", s -> s.scale, (s, v) -> s.scale = v);
+		this.button(Page.RUNE, this.panelX, r4, halfW, "Reset", () -> {
+			boolean wasOn = this.rune().enabled;
+			RuneEffect effect = this.rune().effect;
+			this.current().rune = new Rune();
+			this.current().rune.enabled = wasOn;
+			this.current().rune.effect = effect;
+		}).setTooltip(tip("Reset shape, color and sliders"));
+		this.copyToAllButton(Page.RUNE, this.panelX + halfW + GAP, r4, halfW, "rune", s -> s.rune = this.rune().copy());
 
 		// ---- Bottom row ----
 		int bottomY = this.height - 36;
 		this.addRenderableWidget(new ValueSlider(18, bottomY, this.previewRight - 32, ROW, "Turn view", 0, 360, 5, "%.0f", this.previewYaw, v -> this.previewYaw = (float) v));
 
-		Button enabled = this.button(null, this.panelX, bottomY, thirdW, "", () -> config().enabled = !config().enabled);
+		GlassButton enabled = this.button(null, this.panelX, bottomY, thirdW, "", () -> config().enabled = !config().enabled);
 		enabled.setTooltip(tip("Turn all Vanity looks on or off"));
 		this.sync(() -> enabled.setMessage(Component.literal("Vanity: " + onOff(config().enabled))));
 
-		Button icons = this.button(null, x2, bottomY, thirdW, "", () -> config().showInInventory = !config().showInInventory);
+		GlassButton icons = this.button(null, x2, bottomY, thirdW, "", () -> config().showInInventory = !config().showInInventory);
 		icons.setTooltip(tip("Also show the looks on your worn armor's icons in the inventory"));
 		this.sync(() -> icons.setMessage(Component.literal("Inv icons: " + onOff(config().showInInventory))));
 
@@ -488,52 +589,15 @@ public final class VanityScreen extends Screen {
 		this.refresh();
 	}
 
+	private static String stripNamespace(String id) {
+		return id.startsWith("minecraft:") ? id.substring(10) : id;
+	}
+
 	// ---- actions ----
 
-	private void pickTrim(String patternId, String materialId) {
-		SlotSettings s = this.current();
-		if (patternId != null) s.trimPattern = patternId;
-		if (materialId != null) s.trimMaterial = materialId;
-		s.trim = TrimMode.PICK;
-	}
-
-	private void pickRuneEffect(int direction) {
-		this.rune().effect = this.rune().effect.step(direction);
-		this.rune().enabled = true;
-	}
-
-	private void pickRuneShape(int direction) {
-		this.rune().shape = this.rune().shapeFor(this.selected).step(direction);
-		this.rune().enabled = true;
-	}
-
-	private void pickLayerPattern(int direction) {
-		this.layer().pattern = Trims.step(Trims.PATTERNS, this.layer().pattern, direction);
-		this.layer().enabled = true;
-	}
-
 	private void select(CosmeticSlot slot) {
+		this.all = false;
 		this.selected = slot;
-		this.syncItemBox();
-		this.refresh();
-	}
-
-	/** Real armor, then each armor material in turn, applied to all four slots. */
-	private void cycleArmorSet() {
-		ArmorSet current = ArmorSet.wornBy(config());
-		ArmorSet[] sets = ArmorSet.values();
-		ArmorSet next;
-
-		if (current == null) {
-			next = ArmorSet.noneWorn(config()) ? sets[0] : null;
-		} else {
-			next = current.ordinal() + 1 < sets.length ? sets[current.ordinal() + 1] : null;
-		}
-
-		for (CosmeticSlot slot : CosmeticSlot.values()) {
-			config().get(slot).setLook(next == null ? "" : next.itemId(slot));
-		}
-
 		this.syncItemBox();
 	}
 
@@ -554,24 +618,9 @@ public final class VanityScreen extends Screen {
 	/** Shows the selected slot's item id in the box without treating it as typing. */
 	private void syncItemBox() {
 		this.syncing = true;
-		this.itemBox.setValue(this.current().item);
+		this.itemBox.setValue(this.all ? "" : this.current().item);
 		this.itemBox.moveCursorToStart(false);
 		this.syncing = false;
-	}
-
-	/** Non-armor items are fitted to the armor shape and use the Fit page instead of Style and Trim. */
-	private boolean fitted() {
-		ItemStack stack = this.current().stack();
-		return !stack.isEmpty() && !VanityCosmetics.usesVanillaLook(this.selected, stack);
-	}
-
-	private boolean available(Page p) {
-		boolean fitted = this.fitted();
-		return switch (p) {
-			case LOOK, DESIGN, RUNE -> true;
-			case STYLE, TRIM -> !fitted;
-			case FIT -> fitted;
-		};
 	}
 
 	/** Syncs every widget with the selected slot and page. */
@@ -579,17 +628,15 @@ public final class VanityScreen extends Screen {
 		if (!this.initialized) return;
 		this.syncing = true;
 
-		if (!this.available(this.page)) this.page = Page.LOOK;
-
 		CosmeticSlot[] slots = CosmeticSlot.values();
+		this.allTab.selected = this.all;
 
 		for (int i = 0; i < this.slotTabs.size(); i++) {
-			this.slotTabs.get(i).selected = slots[i] == this.selected;
+			this.slotTabs.get(i).selected = !this.all && slots[i] == this.selected;
 		}
 
 		for (Map.Entry<Page, GlassButton> entry : this.pageTabs.entrySet()) {
 			entry.getValue().selected = entry.getKey() == this.page;
-			entry.getValue().active = this.available(entry.getKey());
 		}
 
 		for (Map.Entry<Page, List<AbstractWidget>> entry : this.pageWidgets.entrySet()) {
@@ -597,10 +644,121 @@ public final class VanityScreen extends Screen {
 			for (AbstractWidget widget : entry.getValue()) widget.visible = visible;
 		}
 
+		if (this.all) {
+			for (AbstractWidget widget : this.singleSlotWidgets) widget.visible = false;
+		}
+
 		for (Runnable syncer : this.syncers) syncer.run();
 
 		this.syncing = false;
 	}
+
+	// ---- dropdown menu ----
+
+	private int menuRows() {
+		return Math.min(MENU_MAX_ROWS, this.menu.options().size());
+	}
+
+	/** Top of the open menu: below its button, or above it if there's no room. */
+	private int menuTop() {
+		int h = this.menuRows() * MENU_ROW + 4;
+		return this.menu.y() + h > this.height - 4 ? this.menu.anchorY() - h - 1 : this.menu.y();
+	}
+
+	private boolean inMenu(double mouseX, double mouseY) {
+		if (this.menu == null) return false;
+		int top = this.menuTop();
+		return mouseX >= this.menu.x() && mouseX < this.menu.x() + this.menu.w() && mouseY >= top && mouseY < top + this.menuRows() * MENU_ROW + 4;
+	}
+
+	private int menuIndexAt(double mouseX, double mouseY) {
+		if (!this.inMenu(mouseX, mouseY)) return -1;
+		int row = (int) ((mouseY - this.menuTop() - 2) / MENU_ROW);
+		int index = this.menuScroll + row;
+		return row >= 0 && row < this.menuRows() && index < this.menu.options().size() ? index : -1;
+	}
+
+	private void extractMenu(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+		Menu m = this.menu;
+		int rows = this.menuRows();
+		int top = this.menuTop();
+		int h = rows * MENU_ROW + 4;
+		g.nextStratum();
+		Glass.fill(g, m.x(), top, m.w(), h, 0xF2121720);
+		Glass.border(g, m.x(), top, m.w(), h, Glass.alpha(Glass.ACCENT, 0x90));
+		int hovered = this.menuIndexAt(mouseX, mouseY);
+
+		for (int r = 0; r < rows; r++) {
+			int index = this.menuScroll + r;
+			Option option = m.options().get(index);
+			int rowY = top + 2 + r * MENU_ROW;
+
+			if (index == m.selected()) {
+				g.fill(m.x() + 2, rowY, m.x() + m.w() - 2, rowY + MENU_ROW, Glass.alpha(Glass.ACCENT, 0x45));
+			} else if (index == hovered) {
+				g.fill(m.x() + 2, rowY, m.x() + m.w() - 2, rowY + MENU_ROW, 0x26FFFFFF);
+			}
+
+			int textX = m.x() + 8;
+
+			if (option.swatch() >= 0) {
+				Glass.fill(g, textX, rowY + 3, 8, 8, 0xFF000000 | option.swatch());
+				textX += 13;
+			}
+
+			int color = index == m.selected() ? Glass.ACCENT : index == hovered ? Glass.TEXT : Glass.TEXT_DIM;
+			g.text(this.font, Component.literal(option.label()), textX, rowY + 3, color, false);
+		}
+
+		// Scroll bar for long lists
+		if (m.options().size() > rows) {
+			int trackH = h - 4;
+			int barH = Math.max(8, trackH * rows / m.options().size());
+			int barY = top + 2 + (trackH - barH) * this.menuScroll / (m.options().size() - rows);
+			g.fill(m.x() + m.w() - 4, barY, m.x() + m.w() - 2, barY + barH, 0x80FFFFFF);
+		}
+	}
+
+	@Override
+	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+		if (this.menu != null) {
+			int index = this.menuIndexAt(event.x(), event.y());
+			Menu m = this.menu;
+			this.menu = null;
+
+			if (index >= 0) {
+				m.onPick().accept(index);
+				this.refresh();
+			}
+
+			return true;
+		}
+
+		return super.mouseClicked(event, doubleClick);
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		if (this.menu != null) {
+			int max = Math.max(0, this.menu.options().size() - this.menuRows());
+			this.menuScroll = Math.max(0, Math.min(max, this.menuScroll - (int) Math.signum(scrollY)));
+			return true;
+		}
+
+		return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+	}
+
+	@Override
+	public boolean keyPressed(KeyEvent event) {
+		if (this.menu != null && event.isEscape()) {
+			this.menu = null;
+			return true;
+		}
+
+		return super.keyPressed(event);
+	}
+
+	// ---- drawing ----
 
 	/** Blur the world behind the wardrobe and darken it slightly. */
 	@Override
@@ -619,21 +777,20 @@ public final class VanityScreen extends Screen {
 		int x1 = this.previewRight - 4;
 		int y1 = this.height - 42;
 
-		// Header
 		graphics.text(this.font, Component.literal("VANITY").withStyle(ChatFormatting.BOLD), this.panelX, 16, Glass.ACCENT);
 		graphics.text(this.font, Component.literal("wardrobe"), this.panelX + this.font.width("VANITY") + 8, 16, Glass.TEXT_DIM);
-		// Line under the page tabs
 		graphics.fill(this.panelX, this.contentY - 6, this.panelX + this.panelW, this.contentY - 5, Glass.CONTROL_BORDER);
 
-		super.extractRenderState(graphics, mouseX, mouseY, a);
+		// While a menu is open, widgets under it shouldn't light up
+		boolean overMenu = this.inMenu(mouseX, mouseY);
+		super.extractRenderState(graphics, overMenu ? -1 : mouseX, overMenu ? -1 : mouseY, a);
 
 		switch (this.page) {
 			case LOOK -> this.lookStatus(graphics, this.current());
-			case STYLE -> this.hint(graphics, "Also styles your real armor when no look is set.");
-			case TRIM -> this.hint(graphics, "Also on inventory icons. Texture packs apply.");
-			case DESIGN -> this.hint(graphics, "Up to 3 patterns in any color, over your armor.");
-			case RUNE -> this.hint(graphics, "Particles only you see. Press F5 to look at them.");
-			case FIT -> this.hint(graphics, "Items and blocks, sized to the armor shape.");
+			case STYLE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Also styles your real armor when no look is set.");
+			case TRIM -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Also on inventory icons. Texture packs apply.");
+			case DESIGN -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Up to 3 patterns in any color, over your armor.");
+			case RUNE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Particles only you see. Press F5 to look at them.");
 		}
 
 		LocalPlayer player = this.minecraft.player;
@@ -642,6 +799,8 @@ public final class VanityScreen extends Screen {
 			int size = (int) Math.min((y1 - y0) / 2.6F, (x1 - x0) / 1.4F);
 			this.extractPreview(graphics, x0, y0, x1, y1, size, mouseX, mouseY, player);
 		}
+
+		if (this.menu != null) this.extractMenu(graphics, mouseX, mouseY);
 	}
 
 	/** Gray help text under the page, wrapped to the panel width. */
@@ -657,6 +816,12 @@ public final class VanityScreen extends Screen {
 
 	private void lookStatus(GuiGraphicsExtractor graphics, SlotSettings s) {
 		int y = this.contentY + 2 * (ROW + GAP) + 6;
+
+		if (this.all) {
+			graphics.text(this.font, Component.literal("Pick a slot above to set its own item."), this.panelX, this.contentY + ROW + GAP + 6, GRAY);
+			return;
+		}
+
 		ItemStack stack = s.stack();
 		Component text;
 		int color;
@@ -674,7 +839,7 @@ public final class VanityScreen extends Screen {
 			text = Component.literal("Looks like ").append(stack.getHoverName());
 			color = GREEN;
 		} else {
-			text = Component.literal(this.selected.label + ": ").append(stack.getHoverName()).append(" (fitted)");
+			text = Component.literal(this.selected.label + ": ").append(stack.getHoverName());
 			color = GREEN;
 		}
 
