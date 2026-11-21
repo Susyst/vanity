@@ -8,7 +8,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.8.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.9.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. Click **Armor look** to change all four slots at once: Leather, Chainmail, Iron, Gold, Copper, Diamond,
    Netherite, then Off (your real armor).
@@ -21,7 +21,13 @@ The wardrobe is a frosted-glass panel over your blurred game, with a page for ea
 - **Style**: **Glint** (Like real / On / Off) and **Dye** for leather, with a color row, RGB sliders and a hex box.
 - **Trim**: keep your armor's trim, no trim, or **Pick** any vanilla pattern and material.
 - **Design**: custom trims, up to 3 trim patterns stacked, each in any color.
+- **Rune**: particle effects on each piece, like SkyBlock runes but bigger: 18 effects (dust in any color, rainbow,
+  flames, glyphs, lightning, souls, petals...) in 6 shapes (halo, orbit rings, spiral, wings, aura, trail), with size,
+  amount and speed. Only you see them; press F5.
 - **Fit**: size and position for non-armor items.
+
+The Style page also has **Opacity** (see-through armor), **Glow** (armor that glows in the dark) and **Trim glow**
+(glowing trims and custom designs).
 
 Style and Trim also work on your real armor when no look is set. Each page has **All slots** to copy it to the
 other slots.

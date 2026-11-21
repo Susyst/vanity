@@ -32,6 +32,13 @@ public final class Trims {
 	private Trims() {
 	}
 
+	/** A representative RGB color for a vanilla trim material, used for see-through and glowing trims. */
+	public static int materialColor(String materialId) {
+		String name = materialId.startsWith("minecraft:") ? materialId.substring(10) : materialId;
+		int index = MATERIALS.indexOf(name);
+		return index < 0 ? 0xFFFFFF : PALETTE.get(16 + index);
+	}
+
 	/** "minecraft:sentry" for "sentry". */
 	public static String id(String name) {
 		return "minecraft:" + name;

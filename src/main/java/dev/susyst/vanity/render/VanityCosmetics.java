@@ -70,15 +70,30 @@ public final class VanityCosmetics {
 			data.active[i] = false;
 			data.items[i].clear();
 			data.designs[i] = NO_DESIGN;
+			data.armor[i] = ItemStack.EMPTY;
+			data.opacity[i] = 1.0F;
+			data.glow[i] = 0.0F;
+			data.trimGlow[i] = false;
 			if (!config.enabled) continue;
 
-			extractSlot(slot, data, state, entity, resolver, config.get(slot));
-
-			// Custom trim design: drawn on whatever armor ends up shown in this slot
 			SlotSettings settings = config.get(slot);
+			extractSlot(slot, data, state, entity, resolver, settings);
 
-			if (!settings.invisible && settings.hasDesign() && HumanoidArmorLayer.shouldRender(equipment(slot, state), slot.equipmentSlot)) {
-				data.designs[i] = enabledLayers(settings);
+			// Whatever armor ends up shown in this slot can get a custom design, glow and see-through look
+			ItemStack shown = equipment(slot, state);
+			boolean armorShown = !settings.invisible && HumanoidArmorLayer.shouldRender(shown, slot.equipmentSlot) && !shown.has(DataComponents.GLIDER);
+			if (!armorShown) continue;
+
+			if (settings.hasDesign()) data.designs[i] = enabledLayers(settings);
+			data.opacity[i] = settings.opacity;
+			data.glow[i] = settings.glow;
+			data.trimGlow[i] = settings.trimGlow;
+
+			if (settings.hasCustomArmorRendering()) {
+				data.armor[i] = shown;
+
+				// See-through armor is drawn entirely by Vanity, so the game must not draw the solid version
+				if (settings.opacity < 0.995F) setEquipment(slot, state, ItemStack.EMPTY);
 			}
 		}
 	}

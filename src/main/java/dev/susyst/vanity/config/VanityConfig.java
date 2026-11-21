@@ -33,6 +33,8 @@ public final class VanityConfig {
 	public boolean enabled = true;
 	/** Also show the looks on the icons of the armor you're wearing, in your inventory. */
 	public boolean showInInventory = true;
+	/** Show runes in first person too (they can get in the way). */
+	public boolean runesInFirstPerson;
 	public SlotSettings head = new SlotSettings();
 	public SlotSettings chest = new SlotSettings();
 	public SlotSettings legs = new SlotSettings();

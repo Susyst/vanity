@@ -36,6 +36,14 @@ public final class SlotSettings {
 	public boolean customDye;
 	/** RGB dye color, default is undyed leather. */
 	public int dyeColor = 0xA06540;
+	/** Armor opacity, 0.1 (ghostly) to 1 (solid). */
+	public float opacity = 1.0F;
+	/** How much the armor glows in the dark, 0 to 1. */
+	public float glow;
+	/** Make trims and custom designs glow. */
+	public boolean trimGlow;
+	/** Particle rune worn on this piece. */
+	public Rune rune = new Rune();
 	public FitMode mode = FitMode.STRETCH;
 	/** Hide the real armor (or head item) in this slot while a cosmetic is shown. */
 	public boolean hideArmor = true;
@@ -124,11 +132,19 @@ public final class SlotSettings {
 		return false;
 	}
 
-	/** Resets glint and dye. */
+	/** Resets glint, dye, opacity and glow. */
 	public void resetStyle() {
 		this.glint = GlintMode.AUTO;
 		this.customDye = false;
 		this.dyeColor = 0xA06540;
+		this.opacity = 1.0F;
+		this.glow = 0.0F;
+		this.trimGlow = false;
+	}
+
+	/** True if this slot's armor must be drawn by Vanity (see-through or glowing). */
+	public boolean hasCustomArmorRendering() {
+		return this.opacity < 0.995F || this.glow > 0.005F || this.trimGlow;
 	}
 
 	public void resetTrim() {
@@ -152,6 +168,9 @@ public final class SlotSettings {
 		this.glint = other.glint;
 		this.customDye = other.customDye;
 		this.dyeColor = other.dyeColor;
+		this.opacity = other.opacity;
+		this.glow = other.glow;
+		this.trimGlow = other.trimGlow;
 	}
 
 	public void copyTrimFrom(SlotSettings other) {
@@ -189,6 +208,10 @@ public final class SlotSettings {
 		copy.copyDesignFrom(this);
 		copy.customDye = this.customDye;
 		copy.dyeColor = this.dyeColor;
+		copy.opacity = this.opacity;
+		copy.glow = this.glow;
+		copy.trimGlow = this.trimGlow;
+		copy.rune = this.rune.copy();
 		copy.mode = this.mode;
 		copy.hideArmor = this.hideArmor;
 		copy.offsetX = this.offsetX;
@@ -226,6 +249,12 @@ public final class SlotSettings {
 			this.design[i].sanitize();
 		}
 		this.dyeColor &= 0xFFFFFF;
+		if (!Float.isFinite(this.opacity)) this.opacity = 1.0F;
+		this.opacity = Math.max(0.1F, Math.min(1.0F, this.opacity));
+		if (!Float.isFinite(this.glow)) this.glow = 0.0F;
+		this.glow = Math.max(0.0F, Math.min(1.0F, this.glow));
+		if (this.rune == null) this.rune = new Rune();
+		this.rune.sanitize();
 		if (!Float.isFinite(this.scale) || this.scale <= 0.0F) this.scale = 1.0F;
 		if (!Float.isFinite(this.offsetX)) this.offsetX = 0.0F;
 		if (!Float.isFinite(this.offsetY)) this.offsetY = 0.0F;

@@ -31,6 +31,7 @@ import net.minecraft.world.item.ItemStack;
 import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.ArmorSet;
 import dev.susyst.vanity.config.CosmeticSlot;
+import dev.susyst.vanity.config.Rune;
 import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.TrimLayer;
 import dev.susyst.vanity.config.TrimMode;
@@ -56,6 +57,7 @@ public final class VanityScreen extends Screen {
 		STYLE("Style"),
 		TRIM("Trim"),
 		DESIGN("Design"),
+		RUNE("Rune"),
 		FIT("Fit");
 
 		final String label;
@@ -215,11 +217,20 @@ public final class VanityScreen extends Screen {
 	}
 
 	private void fitSlider(int x, int y, int w, String label, double min, double max, double step, String format, FloatGetter get, FloatSetter set) {
-		ValueSlider slider = this.on(Page.FIT, new ValueSlider(x, y, w, ROW, label, min, max, step, format, 0, v -> {
+		this.slider(Page.FIT, x, y, w, label, min, max, step, format, get, set);
+	}
+
+	private void slider(Page page, int x, int y, int w, String label, double min, double max, double step, String format, FloatGetter get, FloatSetter set) {
+		ValueSlider slider = this.on(page, new ValueSlider(x, y, w, ROW, label, min, max, step, format, 0, v -> {
 			if (this.syncing) return;
 			set.set(this.current(), (float) v);
+			this.refresh();
 		}));
 		this.sync(() -> slider.setRealValue(get.get(this.current())));
+	}
+
+	private Rune rune() {
+		return this.current().rune;
 	}
 
 	// ---- layout ----
@@ -270,9 +281,10 @@ public final class VanityScreen extends Screen {
 		int r3 = r2 + step;
 		int r4 = r3 + step;
 		this.hintY.put(Page.LOOK, r4 + 2);
-		this.hintY.put(Page.STYLE, r4 + 2);
 		this.hintY.put(Page.TRIM, r4 + 2);
 		this.hintY.put(Page.DESIGN, r4 + step + 2);
+		this.hintY.put(Page.RUNE, r4 + step + 2);
+		this.hintY.put(Page.STYLE, r4 + step + 2);
 		this.hintY.put(Page.FIT, r4 + 2);
 
 		// ---- Look ----
@@ -334,7 +346,13 @@ public final class VanityScreen extends Screen {
 		this.hexBox(Page.STYLE, this.panelX, r3, thirdW, () -> this.current().dyeColor, setDye);
 		this.button(Page.STYLE, x2, r3, thirdW, "Reset", () -> this.current().resetStyle());
 		this.button(Page.STYLE, x3, r3, thirdW, "All slots", () -> this.applyToAll(s -> s.copyStyleFrom(this.current())))
-				.setTooltip(tip("Copy this slot's glint and dye to the other three slots"));
+				.setTooltip(tip("Copy this slot's glint, dye, opacity and glow to the other three slots"));
+
+		this.slider(Page.STYLE, this.panelX, r4, thirdW, "Opacity", 10, 100, 5, "%.0f%%", s -> s.opacity * 100.0F, (s, v) -> s.opacity = v / 100.0F);
+		this.slider(Page.STYLE, x2, r4, thirdW, "Glow", 0, 100, 5, "%.0f%%", s -> s.glow * 100.0F, (s, v) -> s.glow = v / 100.0F);
+		GlassButton trimGlow = this.button(Page.STYLE, x3, r4, thirdW, "", () -> this.current().trimGlow = !this.current().trimGlow);
+		trimGlow.setTooltip(tip("Make this slot's trim and custom design glow in the dark"));
+		this.sync(() -> trimGlow.setMessage(Component.literal("Trim glow: " + onOff(this.current().trimGlow))));
 
 		// ---- Trim ----
 		Button trimMode = this.button(Page.TRIM, this.panelX, r0, this.panelW, "", () -> this.current().trim = this.current().trim.next());
@@ -390,6 +408,45 @@ public final class VanityScreen extends Screen {
 		this.button(Page.DESIGN, x3, r4, thirdW, "All slots", () -> this.applyToAll(s -> s.copyDesignFrom(this.current())))
 				.setTooltip(tip("Copy this slot's design to the other three slots"));
 
+		// ---- Rune ----
+		int runeOnW = 64;
+		int effectLabelW = this.panelW - runeOnW - 2 * arrowW - 3 * GAP;
+		GlassButton runeOn = this.button(Page.RUNE, this.panelX, r0, runeOnW, "", GlassButton.Style.SEGMENT, () -> this.rune().enabled = !this.rune().enabled);
+		this.sync(() -> {
+			runeOn.setMessage(Component.literal(this.rune().enabled ? "Rune ON" : "Rune OFF"));
+			runeOn.selected = this.rune().enabled;
+		});
+		int effectX = this.panelX + runeOnW + GAP;
+		this.button(Page.RUNE, effectX, r0, arrowW, "<", () -> this.pickRuneEffect(-1));
+		GlassButton effect = this.button(Page.RUNE, effectX + arrowW + GAP, r0, effectLabelW, "", () -> this.pickRuneEffect(1));
+		this.button(Page.RUNE, this.panelX + this.panelW - arrowW, r0, arrowW, ">", () -> this.pickRuneEffect(1));
+		this.sync(() -> effect.setMessage(Component.literal(this.rune().effect.label)));
+
+		this.button(Page.RUNE, this.panelX, r1, arrowW, "<", () -> this.pickRuneShape(-1));
+		GlassButton shape = this.button(Page.RUNE, this.panelX + arrowW + GAP, r1, labelW, "", () -> this.pickRuneShape(1));
+		this.button(Page.RUNE, this.panelX + this.panelW - arrowW, r1, arrowW, ">", () -> this.pickRuneShape(1));
+		this.sync(() -> shape.setMessage(Component.literal("Shape: " + this.rune().shapeFor(this.selected).label)));
+
+		IntConsumer setRuneColor = color -> {
+			Rune rune = this.rune();
+			rune.color = color;
+			rune.enabled = true;
+			if (!rune.effect.colorable) rune.effect = dev.susyst.vanity.config.RuneEffect.DUST;
+		};
+		this.colorRow(Page.RUNE, r2, () -> this.rune().effect.colorable ? this.rune().color : -1, setRuneColor);
+		this.slider(Page.RUNE, this.panelX, r3, thirdW, "Size", 0.5, 4.0, 0.25, "%.2f", s -> s.rune.size, (s, v) -> s.rune.size = v);
+		this.slider(Page.RUNE, x2, r3, thirdW, "Amount", 1, 12, 1, "%.0f", s -> s.rune.amount, (s, v) -> s.rune.amount = Math.round(v));
+		this.slider(Page.RUNE, x3, r3, thirdW, "Speed", 0.25, 3.0, 0.25, "%.2f", s -> s.rune.speed, (s, v) -> s.rune.speed = v);
+		this.hexBox(Page.RUNE, this.panelX, r4, thirdW, () -> this.rune().color, setRuneColor);
+		this.button(Page.RUNE, x2, r4, thirdW, "Reset", () -> {
+			boolean wasOn = this.rune().enabled;
+			this.current().rune = new Rune();
+			this.current().rune.enabled = wasOn;
+		});
+		GlassButton firstPerson = this.button(Page.RUNE, x3, r4, thirdW, "", () -> config().runesInFirstPerson = !config().runesInFirstPerson);
+		firstPerson.setTooltip(tip("Also show runes in first person (they can get in your way)"));
+		this.sync(() -> firstPerson.setMessage(Component.literal("1st person: " + onOff(config().runesInFirstPerson))));
+
 		// ---- Fit (non-armor items) ----
 		Button mode = this.button(Page.FIT, this.panelX, r0, thirdW, "", () -> this.current().mode = this.current().mode.next());
 		this.sync(() -> {
@@ -435,6 +492,16 @@ public final class VanityScreen extends Screen {
 		if (patternId != null) s.trimPattern = patternId;
 		if (materialId != null) s.trimMaterial = materialId;
 		s.trim = TrimMode.PICK;
+	}
+
+	private void pickRuneEffect(int direction) {
+		this.rune().effect = this.rune().effect.step(direction);
+		this.rune().enabled = true;
+	}
+
+	private void pickRuneShape(int direction) {
+		this.rune().shape = this.rune().shapeFor(this.selected).step(direction);
+		this.rune().enabled = true;
 	}
 
 	private void pickLayerPattern(int direction) {
@@ -498,7 +565,7 @@ public final class VanityScreen extends Screen {
 	private boolean available(Page p) {
 		boolean fitted = this.fitted();
 		return switch (p) {
-			case LOOK, DESIGN -> true;
+			case LOOK, DESIGN, RUNE -> true;
 			case STYLE, TRIM -> !fitted;
 			case FIT -> fitted;
 		};
@@ -562,6 +629,7 @@ public final class VanityScreen extends Screen {
 			case STYLE -> this.hint(graphics, "Also styles your real armor when no look is set.");
 			case TRIM -> this.hint(graphics, "Also on inventory icons. Texture packs apply.");
 			case DESIGN -> this.hint(graphics, "Up to 3 patterns in any color, over your armor.");
+			case RUNE -> this.hint(graphics, "Particles only you see. Press F5 to look at them.");
 			case FIT -> this.hint(graphics, "Items and blocks, sized to the armor shape.");
 		}
 

@@ -36,6 +36,9 @@ import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.FitMode;
 import dev.susyst.vanity.config.GlintMode;
+import dev.susyst.vanity.config.Rune;
+import dev.susyst.vanity.config.RuneEffect;
+import dev.susyst.vanity.config.RuneShape;
 import dev.susyst.vanity.config.TrimLayer;
 import dev.susyst.vanity.config.TrimMode;
 import dev.susyst.vanity.render.VanityRenderData;
@@ -145,6 +148,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testInventoryIcons(context, singleplayer);
 			testArmorOptions(context, singleplayer);
 			testTrimsAndDesigns(context, singleplayer);
+			testGlowOpacityRunes(context, singleplayer);
 		}
 	}
 
@@ -444,6 +448,76 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.STYLE));
 		context.waitTicks(10);
 		context.takeScreenshot("20_wardrobe_style_page");
+		context.setScreen(() -> null);
+	}
+
+	private static void rune(Rune rune, RuneEffect effect, RuneShape shape, int color, float size, int amount) {
+		rune.enabled = true;
+		rune.effect = effect;
+		rune.shape = shape;
+		rune.color = color;
+		rune.size = size;
+		rune.amount = amount;
+		rune.speed = 1.0F;
+	}
+
+	/** Glowing armor and trims at night, see-through leggings, and runes on every piece. */
+	private static void testGlowOpacityRunes(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			// Chest: netherite look, fully glowing, with a glowing gold rib trim
+			config.chest.glow = 1.0F;
+			config.chest.trimGlow = true;
+			// Head: keep the custom design from before, make it glow
+			config.head.trimGlow = true;
+			// Legs: see-through
+			config.legs.opacity = 0.35F;
+
+			check(drawnArmor(client, EquipmentSlot.LEGS).isEmpty(), "See-through leggings must not be drawn by the vanilla armor layer");
+			AvatarRenderState state = (AvatarRenderState) client.getEntityRenderDispatcher().getRenderer(client.player).createRenderState(client.player, 1.0F);
+			VanityRenderData data = state.getData(VanityClient.RENDER_DATA);
+			check(data != null && !data.armor[CosmeticSlot.LEGS.ordinal()].isEmpty(), "Vanity should draw the see-through leggings");
+			check(Math.abs(data.opacity[CosmeticSlot.LEGS.ordinal()] - 0.35F) < 0.001F, "Leggings opacity should be 35%");
+			check(!data.armor[CosmeticSlot.CHEST.ordinal()].isEmpty() && data.glow[CosmeticSlot.CHEST.ordinal()] > 0.99F, "Chest should glow");
+		});
+
+		singleplayer.getServer().runCommand("time set noon");
+		context.waitTicks(10);
+		context.takeScreenshot("21_see_through_leggings_day");
+
+		singleplayer.getServer().runCommand("time set midnight");
+		context.waitTicks(10);
+		context.takeScreenshot("22_glowing_armor_and_trims_night");
+
+		// Runes on every piece
+		singleplayer.getServer().runCommand("time set noon");
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			rune(config.head.rune, RuneEffect.DUST, RuneShape.HALO, 0x5BD2FF, 3.0F, 8);
+			rune(config.chest.rune, RuneEffect.DUST, RuneShape.WINGS, 0xFF4FD8, 2.5F, 12);
+			rune(config.legs.rune, RuneEffect.RAINBOW, RuneShape.SPIRAL, 0xFFFFFF, 2.0F, 6);
+			rune(config.feet.rune, RuneEffect.FLAME, RuneShape.TRAIL, 0xFFFFFF, 1.0F, 6);
+		});
+		context.waitTicks(30);
+		context.takeScreenshot("23_runes_front");
+		setCamera(context, CameraType.THIRD_PERSON_BACK);
+		context.waitTicks(20);
+		context.takeScreenshot("24_runes_back_wings");
+		setCamera(context, CameraType.THIRD_PERSON_FRONT);
+
+		context.runOnClient(client -> {
+			rune(VanityClient.config().chest.rune, RuneEffect.SOUL_FLAME, RuneShape.ORBIT, 0xFFFFFF, 1.0F, 10);
+			rune(VanityClient.config().head.rune, RuneEffect.LIGHTNING, RuneShape.HALO, 0xFFFFFF, 1.0F, 8);
+		});
+		context.waitTicks(30);
+		context.takeScreenshot("25_runes_orbit_lightning");
+
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.RUNE));
+		context.waitTicks(10);
+		context.takeScreenshot("26_wardrobe_rune_page");
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.LEGS, VanityScreen.Page.STYLE));
+		context.waitTicks(10);
+		context.takeScreenshot("27_wardrobe_style_glow_opacity");
 		context.setScreen(() -> null);
 	}
 

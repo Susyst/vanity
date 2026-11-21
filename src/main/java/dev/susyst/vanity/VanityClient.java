@@ -23,6 +23,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
 
 import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.render.RuneParticles;
 import dev.susyst.vanity.render.VanityCosmetics;
 import dev.susyst.vanity.render.VanityLayer;
 import dev.susyst.vanity.render.VanityRenderData;
@@ -54,6 +55,8 @@ public final class VanityClient implements ClientModInitializer {
 		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.open", InputConstants.Type.KEYBOARD, SDLScancode.SDL_SCANCODE_V, CATEGORY));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			RuneParticles.tick(client);
+
 			while (openKey.consumeClick()) {
 				if (client.player != null && client.gui.screen() == null) {
 					client.gui.setScreen(new VanityScreen());
@@ -77,7 +80,7 @@ public final class VanityClient implements ClientModInitializer {
 						slim ? ModelLayers.PLAYER_SLIM_ARMOR : ModelLayers.PLAYER_ARMOR,
 						context.getModelSet(),
 						part -> new PlayerModel(part, slim));
-				registrationHelper.register(new VanityLayer(avatarRenderer, armorModels));
+				registrationHelper.register(new VanityLayer(avatarRenderer, armorModels, context.getEquipmentAssets()));
 			}
 		});
 	}
