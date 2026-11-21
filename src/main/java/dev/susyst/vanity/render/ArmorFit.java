@@ -142,9 +142,10 @@ public final class ArmorFit {
 	 * is drawn filling {@code box}.
 	 */
 	public static void apply(PoseStack poseStack, Box box, AABB modelBounds, SlotSettings settings) {
-		// Move to the middle of the armor box, then apply the user's offset (in pixels, +Y up).
+		// Move to the middle of the armor box, then apply the user's offset (in pixels, +Y up, +Z forward).
+		// In model space Y points down and the player faces -Z.
 		poseStack.translate(box.centerX() / 16.0F, box.centerY() / 16.0F, box.centerZ() / 16.0F);
-		poseStack.translate(settings.offsetX / 16.0F, -settings.offsetY / 16.0F, settings.offsetZ / 16.0F);
+		poseStack.translate(settings.offsetX / 16.0F, -settings.offsetY / 16.0F, -settings.offsetZ / 16.0F);
 
 		// Model space has Y pointing down; flip to item space the same way vanilla's CustomHeadLayer does.
 		poseStack.rotateDegrees(Axis.YP, 180.0F);
@@ -187,6 +188,14 @@ public final class ArmorFit {
 		for (int i = 0; i < 3; i++) {
 			boolean stretchAxis = settings.mode == FitMode.STRETCH && modelSize[i] > EPSILON;
 			factor[i] = (stretchAxis ? boxSize[i] / modelSize[i] : uniform) * settings.scale;
+		}
+
+		if (settings.mode == FitMode.CONTAIN) {
+			// Rest the model against the front of the armor instead of the middle of the body part, so thin models
+			// (flat items like swords) sit on the surface instead of being hidden inside the body.
+			// After the flip above, forward is still -Z.
+			float spareDepth = boxSize[2] - modelSize[2] * factor[2];
+			poseStack.translate(0.0F, 0.0F, -spareDepth * 0.5F);
 		}
 
 		poseStack.scale(factor[0], factor[1], factor[2]);

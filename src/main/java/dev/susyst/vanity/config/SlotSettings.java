@@ -11,7 +11,7 @@ public final class SlotSettings {
 	public FitMode mode = FitMode.STRETCH;
 	/** Hide the real armor (or head item) in this slot while a cosmetic is shown. */
 	public boolean hideArmor = true;
-	/** Offset in pixels (1/16 of a block). +Y is up. */
+	/** Offset in pixels (1/16 of a block). +Y is up, +Z is forward. */
 	public float offsetX;
 	public float offsetY;
 	public float offsetZ;

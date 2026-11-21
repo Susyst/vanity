@@ -38,6 +38,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			setCamera(context, CameraType.THIRD_PERSON_FRONT);
 			clearCosmetics(context);
 			context.waitTicks(20);
+			cleanView(context);
 			context.takeScreenshot("01_real_armor_no_cosmetics");
 
 			setCosmetics(context, FitMode.STRETCH, "minecraft:glass", "minecraft:light_blue_stained_glass", "minecraft:glass", "minecraft:tinted_glass");
@@ -65,7 +66,12 @@ public class VanityClientGameTest implements FabricClientGameTest {
 				set(config.feet, "", FitMode.STRETCH);
 			});
 			context.waitTicks(5);
-			context.takeScreenshot("06_pumpkin_vanilla_size_and_flat_item");
+			context.takeScreenshot("06_pumpkin_vanilla_size_and_sword_front");
+
+			setCamera(context, CameraType.THIRD_PERSON_BACK);
+			context.waitTicks(5);
+			context.takeScreenshot("06b_pumpkin_vanilla_size_and_sword_back");
+			setCamera(context, CameraType.THIRD_PERSON_FRONT);
 
 			setCosmetics(context, FitMode.STRETCH, "minecraft:glass", "minecraft:light_blue_stained_glass", "minecraft:glass", "minecraft:tinted_glass");
 			context.setScreen(VanityScreen::new);
@@ -74,6 +80,18 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			context.setScreen(() -> null);
 			context.waitTicks(2);
 		}
+	}
+
+	/** Hides the HUD, chat and toasts so the player is clearly visible in screenshots. */
+	private static void cleanView(ClientGameTestContext context) {
+		context.runOnClient(client -> {
+			client.gui.toastManager().clear();
+			client.gui.hud.getChat().clearMessages(false);
+
+			if (!client.gui.hud.isHidden()) {
+				client.gui.hud.toggle();
+			}
+		});
 	}
 
 	private static void setCamera(ClientGameTestContext context, CameraType cameraType) {
