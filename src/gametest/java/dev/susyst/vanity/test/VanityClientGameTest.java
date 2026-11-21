@@ -8,6 +8,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.CompletableFuture;
 
+import com.mojang.blaze3d.platform.InputConstants;
+
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
@@ -550,11 +552,11 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			return new double[] {(panelX + halfW / 2.0) * scale, (rowTop + 10) * scale, (rowTop + 21 + 2 + 2 * 14 + 7) * scale};
 		});
 		context.getInput().setCursorPos(spot[0], spot[1]);
-		context.getInput().pressMouse(0);
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
 		context.waitTicks(3);
 		context.takeScreenshot("25c_dropdown_open");
 		context.getInput().setCursorPos(spot[0], spot[2]);
-		context.getInput().pressMouse(0);
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
 		context.waitTicks(3);
 		context.runOnClient(client -> {
 			for (CosmeticSlot slot : CosmeticSlot.values()) {
