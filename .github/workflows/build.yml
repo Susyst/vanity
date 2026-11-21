@@ -26,6 +26,9 @@ jobs:
           java-version: '25'
           distribution: 'microsoft'
 
+      - name: setup gradle (caches downloaded dependencies between runs)
+        uses: gradle/actions/setup-gradle@v6
+
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
 
@@ -34,7 +37,18 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          ./gradlew build --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log
+          # Maven Central sometimes rate-limits GitHub runners (HTTP 429). Retry only download failures.
+          for attempt in 1 2 3 4; do
+            if ./gradlew build --stacktrace --warning-mode all 2>&1 | tee build.log; then
+              exit 0
+            fi
+            if ! grep -qE "status code 429|Could not GET|Could not HEAD|Read timed out|Connection reset" build.log; then
+              exit 1
+            fi
+            echo "::warning::Dependency download failed on attempt $attempt, retrying"
+            sleep $((attempt * 45))
+          done
+          exit 1
 
       - name: collect errors
         if: always()
