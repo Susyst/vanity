@@ -27,6 +27,22 @@ dependencies {
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 }
 
+// In-game client test: starts a real client, puts cosmetics on and takes screenshots.
+// Run with: ./gradlew runClientGameTest (CI wraps it in xvfb-run)
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = "vanity-test"
+		enableGameTests = false
+		enableClientGameTests = true
+		eula = true // By setting this to true, you agree to the Minecraft EULA.
+	}
+}
+
+tasks.matching { it.name == "runClientGameTest" }.configureEach {
+	jvmArgs "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
+}
+
 processResources {
 	def version = project.version
 	inputs.property "version", version

@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "vanity-test",
+	"version": "1.0.0",
+	"name": "Vanity Tests",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"dev.susyst.vanity.test.VanityClientGameTest"
+		]
+	},
+	"depends": {
+		"vanity": "*"
+	}
+}
