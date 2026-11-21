@@ -41,6 +41,26 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			cleanView(context);
 			context.takeScreenshot("01_real_armor_no_cosmetics");
 
+			// Armor look: wearing iron/diamond/gold/netherite, shown as a full netherite set
+			setCosmetics(context, FitMode.STRETCH, "minecraft:netherite_helmet", "minecraft:netherite_chestplate", "minecraft:netherite_leggings", "minecraft:netherite_boots");
+			context.waitTicks(5);
+			context.takeScreenshot("01b_netherite_look_front");
+			setCamera(context, CameraType.THIRD_PERSON_BACK);
+			context.waitTicks(5);
+			context.takeScreenshot("01c_netherite_look_back");
+			setCamera(context, CameraType.THIRD_PERSON_FRONT);
+
+			// Mixed looks per slot
+			setCosmetics(context, FitMode.STRETCH, "minecraft:golden_helmet", "minecraft:netherite_chestplate", "minecraft:leather_leggings", "minecraft:copper_boots");
+			context.waitTicks(5);
+			context.takeScreenshot("01d_mixed_armor_look");
+
+			// Enchanted real armor keeps its shine on the new look
+			singleplayer.getServer().runCommand("item replace entity @a armor.chest with minecraft:diamond_chestplate[minecraft:enchantment_glint_override=true]");
+			setCosmetics(context, FitMode.STRETCH, "", "minecraft:netherite_chestplate", "", "");
+			context.waitTicks(10);
+			context.takeScreenshot("01e_enchanted_diamond_shown_as_netherite");
+
 			setCosmetics(context, FitMode.STRETCH, "minecraft:glass", "minecraft:light_blue_stained_glass", "minecraft:glass", "minecraft:tinted_glass");
 			context.waitTicks(5);
 			context.takeScreenshot("02_glass_armor_front");
@@ -73,7 +93,8 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("06b_pumpkin_vanilla_size_and_sword_back");
 			setCamera(context, CameraType.THIRD_PERSON_FRONT);
 
-			setCosmetics(context, FitMode.STRETCH, "minecraft:glass", "minecraft:light_blue_stained_glass", "minecraft:glass", "minecraft:tinted_glass");
+			setCosmetics(context, FitMode.STRETCH, "minecraft:netherite_helmet", "minecraft:netherite_chestplate", "minecraft:netherite_leggings", "minecraft:netherite_boots");
+			context.runOnClient(client -> VanityClient.config().chest.mode = FitMode.STRETCH);
 			context.setScreen(VanityScreen::new);
 			context.waitTicks(10);
 			context.takeScreenshot("07_wardrobe_screen");

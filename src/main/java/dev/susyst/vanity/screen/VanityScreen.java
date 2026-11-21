@@ -20,11 +20,16 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
 
 import dev.susyst.vanity.VanityClient;
+import dev.susyst.vanity.config.ArmorSet;
 import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.render.VanityCosmetics;
 
-/** The wardrobe: pick an item per armor slot, choose how it fits, and tweak it with a live preview. */
+/**
+ * The wardrobe. Pick what each armor slot looks like: another armor (wear diamond, show netherite) or any item or block,
+ * with a live preview.
+ */
 public final class VanityScreen extends Screen {
 	private static final int ROW = 20;
 	private static final int GAP = 4;
@@ -38,6 +43,7 @@ public final class VanityScreen extends Screen {
 
 	private final List<Button> slotButtons = new ArrayList<>();
 	private EditBox itemBox;
+	private Button setButton;
 	private Button modeButton;
 	private Button hideButton;
 	private Button enabledButton;
@@ -87,6 +93,14 @@ public final class VanityScreen extends Screen {
 			this.slotButtons.add(this.addRenderableWidget(tab));
 		}
 
+		y += ROW + GAP;
+
+		// One click: make all four slots look like one armor material
+		this.setButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> this.cycleArmorSet())
+				.bounds(this.panelX, y, this.panelW, ROW)
+				.build());
+		this.setButton.setTooltip(Tooltip.create(Component.literal("Click to change how all four armor slots look. Your real armor stays the same; only the look changes.")));
+
 		y += ROW + 8;
 
 		// Item id, "use held item", clear
@@ -94,9 +108,12 @@ public final class VanityScreen extends Screen {
 		int boxW = this.panelW - 2 * (smallW + GAP);
 		this.itemBox = new EditBox(this.font, this.panelX, y, boxW, ROW, Component.literal("Item ID"));
 		this.itemBox.setMaxLength(128);
-		this.itemBox.setHint(Component.literal("minecraft:glass"));
+		this.itemBox.setHint(Component.literal("netherite_chestplate"));
 		this.itemBox.setValue(this.current().item);
-		this.itemBox.setResponder(value -> this.current().item = value.trim());
+		this.itemBox.setResponder(value -> {
+			this.current().item = value.trim();
+			if (this.scale != null) this.refresh();
+		});
 		this.addRenderableWidget(this.itemBox);
 
 		Button held = Button.builder(Component.literal("Held"), b -> this.useHeldItem())
@@ -169,6 +186,26 @@ public final class VanityScreen extends Screen {
 		this.refresh();
 	}
 
+	/** Off, then each armor material in turn, applied to all four slots. */
+	private void cycleArmorSet() {
+		ArmorSet current = ArmorSet.wornBy(config());
+		ArmorSet[] sets = ArmorSet.values();
+		ArmorSet next;
+
+		if (current == null) {
+			next = ArmorSet.noneWorn(config()) ? sets[0] : null;
+		} else {
+			next = current.ordinal() + 1 < sets.length ? sets[current.ordinal() + 1] : null;
+		}
+
+		for (CosmeticSlot slot : CosmeticSlot.values()) {
+			config().get(slot).item = next == null ? "" : next.itemId(slot);
+		}
+
+		this.itemBox.setValue(this.current().item);
+		this.refresh();
+	}
+
 	private void useHeldItem() {
 		LocalPlayer player = this.minecraft.player;
 		if (player == null) return;
@@ -184,6 +221,22 @@ public final class VanityScreen extends Screen {
 		for (int i = 0; i < this.slotButtons.size(); i++) {
 			this.slotButtons.get(i).active = slots[i] != this.selected;
 		}
+
+		ArmorSet set = ArmorSet.wornBy(config());
+		String setLabel = set != null ? set.label : ArmorSet.noneWorn(config()) ? "Off (real armor)" : "Custom";
+		this.setButton.setMessage(Component.literal("Armor look: " + setLabel));
+
+		// Real armor pieces use the vanilla armor model, so fitting and transforms don't apply to them.
+		boolean fitted = !VanityCosmetics.isArmorLook(this.selected, s.stack());
+		this.modeButton.active = fitted;
+		this.hideButton.active = fitted;
+		this.offsetX.active = fitted;
+		this.offsetY.active = fitted;
+		this.offsetZ.active = fitted;
+		this.rotX.active = fitted;
+		this.rotY.active = fitted;
+		this.rotZ.active = fitted;
+		this.scale.active = fitted;
 
 		this.modeButton.setMessage(Component.literal("Fit: " + s.mode.label));
 		this.modeButton.setTooltip(Tooltip.create(Component.literal(s.mode.description)));
@@ -214,11 +267,13 @@ public final class VanityScreen extends Screen {
 		ItemStack stack = s.stack();
 
 		if (s.item.isBlank()) {
-			graphics.text(this.font, Component.literal("No item. Type an id or hold one and press Held."), this.panelX, this.statusY, GRAY);
+			graphics.text(this.font, Component.literal("Showing your real armor."), this.panelX, this.statusY, GRAY);
 		} else if (stack.isEmpty()) {
 			graphics.text(this.font, Component.literal("Unknown item id"), this.panelX, this.statusY, RED);
+		} else if (VanityCosmetics.isArmorLook(this.selected, stack)) {
+			graphics.text(this.font, Component.literal("Looks like ").append(stack.getHoverName()), this.panelX, this.statusY, GREEN);
 		} else {
-			graphics.text(this.font, Component.literal(this.selected.label + ": ").append(stack.getHoverName()), this.panelX, this.statusY, GREEN);
+			graphics.text(this.font, Component.literal(this.selected.label + ": ").append(stack.getHoverName()).append(" (fitted)"), this.panelX, this.statusY, GREEN);
 		}
 
 		LocalPlayer player = this.minecraft.player;

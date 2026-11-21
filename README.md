@@ -1,27 +1,31 @@
 # Vanity
 
-Client-side cosmetics for Minecraft **26.3** (Fabric). Wear any item or block as armor on your own player.
+Client-side armor looks for Minecraft **26.3** (Fabric). Wear diamond armor but show netherite, gold, leather or
+any other armor, per slot or as a whole set. Your real armor and its protection don't change; only the look does.
+Enchantment shine and armor trims from the armor you're really wearing carry over to the new look.
 
-The point of 0.4: models are **fitted to the real armor shape**, not shown as miniature items. Put glass in the
-Head slot and you get a see-through glass helmet around your head. Put it in Chest and you get glass around your
-torso and both arms; Legs covers the belt and both legs; Feet covers the lower legs like boots. Every piece is
-attached to its body part, so it swings with your arms and legs and follows crouching.
+Any other item or block can be worn too: it's fitted to the armor shape (glass in the Head slot becomes a glass helmet).
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.4.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.5.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
-3. Pick a slot tab, type an item id (`glass`, `minecraft:tinted_glass`, `diamond_block`...) or hold an item and press
-   **Held**.
-4. Choose a fit:
-   - **Armor shape**: stretches the model to fill the armor box exactly. Best for blocks.
-   - **Fit inside**: scales evenly so the model fits inside the armor box and rests it on the front of the armor.
-     Best for flat items like swords.
-   - **Vanilla size**: normal head-item size, like a pumpkin.
-5. Fine-tune with Move X/Y/Z (pixels; +Y up, +Z forward), Turn X/Y/Z (degrees) and Size. Turning keeps the model filling the armor
-   shape. **Hide armor** hides your real armor in that slot.
+3. Click **Armor look** to change all four slots at once: Leather, Chainmail, Iron, Gold, Copper, Diamond,
+   Netherite, then Off (your real armor).
+4. For one slot only, pick its tab and type an armor id (`netherite_chestplate`, `golden_helmet`...), or hold one and
+   press **Held**. **Clear** goes back to your real armor for that slot.
 
 Settings save to `config/vanity.json`. Only you see the cosmetics.
+
+### Non-armor items
+
+Put any other item or block in a slot and it's drawn fitted to the armor shape:
+- **Armor shape**: stretches the model to fill the armor box exactly. Best for blocks.
+- **Fit inside**: scales evenly, resting on the front of the armor. Best for flat items like swords.
+- **Vanilla size**: normal head-item size, like a pumpkin.
+
+Fine-tune with Move X/Y/Z (pixels; +Y up, +Z forward), Turn X/Y/Z (degrees) and Size. **Hide armor** hides your real
+armor in that slot.
 
 ## How fitting works
 

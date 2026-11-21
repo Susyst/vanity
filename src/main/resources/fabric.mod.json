@@ -3,7 +3,7 @@
 	"id": "vanity",
 	"version": "${version}",
 	"name": "Vanity",
-	"description": "Client-side cosmetics: wear any item or block (like glass) as armor. Blocks are fitted to the real armor shape around your head, body, arms, legs and feet.",
+	"description": "Client-side armor looks: wear diamond but show netherite (or any armor), per slot or as a whole set. Any other item or block can be worn too, fitted to the armor shape.",
 	"authors": [
 		"Susyst"
 	],
