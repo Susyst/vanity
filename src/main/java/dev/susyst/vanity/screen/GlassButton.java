@@ -21,6 +21,8 @@ public final class GlassButton extends Button {
 		SWATCH
 	}
 
+	private static final int DARK_TEXT = 0xFF0B1220;
+
 	private final Style style;
 	/** Shown as picked (selected tab, segment or swatch). */
 	public boolean selected;
@@ -49,7 +51,7 @@ public final class GlassButton extends Button {
 			case SEGMENT -> {
 				if (this.selected) {
 					Glass.fill(g, x, y, w, h, Glass.alpha(Glass.ACCENT, 0xC8));
-					textColor = 0xFF0B1220;
+					textColor = DARK_TEXT;
 				} else {
 					Glass.fill(g, x, y, w, h, hot ? Glass.CONTROL_HOVER : Glass.CONTROL);
 				}
@@ -65,7 +67,7 @@ public final class GlassButton extends Button {
 			}
 			case PRIMARY -> {
 				Glass.fill(g, x, y, w, h, Glass.alpha(Glass.ACCENT, hot ? 0xF0 : 0xC0));
-				textColor = 0xFF0B1220;
+				textColor = DARK_TEXT;
 			}
 			case SWATCH -> {
 				Glass.fill(g, x + 1, y + 2, w - 2, h - 4, 0xFF000000 | (this.swatchColor & 0xFFFFFF));
@@ -76,6 +78,8 @@ public final class GlassButton extends Button {
 
 		Font font = Minecraft.getInstance().font;
 		Component message = this.getMessage();
-		g.centeredText(font, message, x + w / 2, y + (h - 8) / 2, textColor);
+		// Dark text on the accent color reads cleaner without the drop shadow.
+		boolean shadow = (textColor & 0xFFFFFF) != (DARK_TEXT & 0xFFFFFF);
+		g.text(font, message, x + (w - font.width(message)) / 2, y + (h - 8) / 2, textColor, shadow);
 	}
 }

@@ -15,7 +15,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 4. For one slot only, pick its tab and type an armor id (`netherite_chestplate`, `golden_helmet`...), or hold one and
    press **Held**. **Clear** goes back to your real armor for that slot.
 
-The wardrobe has a page for each kind of option:
+The wardrobe is a frosted-glass panel over your blurred game, with a page for each kind of option:
 - **Look**: what the slot looks like (armor id, Held, Worn, Clear), plus **Invisible** and **No armor: Hide/Show**
   (by default a look disappears when you take that armor off).
 - **Style**: **Glint** (Like real / On / Off) and **Dye** for leather, with a color row, RGB sliders and a hex box.
