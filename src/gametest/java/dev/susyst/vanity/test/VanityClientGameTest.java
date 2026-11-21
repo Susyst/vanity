@@ -13,6 +13,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.equipment.trim.ArmorTrim;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -34,6 +36,9 @@ import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.FitMode;
 import dev.susyst.vanity.config.GlintMode;
+import dev.susyst.vanity.config.TrimLayer;
+import dev.susyst.vanity.config.TrimMode;
+import dev.susyst.vanity.render.VanityRenderData;
 import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.VanityConfig;
 import dev.susyst.vanity.render.VanityCosmetics;
@@ -139,6 +144,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testSkyBlockLooks(context, singleplayer);
 			testInventoryIcons(context, singleplayer);
 			testArmorOptions(context, singleplayer);
+			testTrimsAndDesigns(context, singleplayer);
 		}
 	}
 
@@ -361,6 +367,83 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST));
 		context.waitTicks(10);
 		context.takeScreenshot("15_wardrobe_dye_sliders");
+		context.setScreen(() -> null);
+	}
+
+	private static boolean hasTrim(ItemStack stack, String pattern, String material) {
+		ArmorTrim trim = stack.get(DataComponents.TRIM);
+		return trim != null && trim.pattern().is(Identifier.parse(pattern)) && trim.material().is(Identifier.parse(material));
+	}
+
+	/** Vanilla trims on a look and on real armor (and its icon), and custom multi-color trim designs. */
+	private static void testTrimsAndDesigns(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		singleplayer.getServer().runOnServer(server -> {
+			var player = singleplayer.getConnection().getServerPlayer();
+			player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+			player.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
+			player.setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.IRON_LEGGINGS));
+			player.setItemSlot(EquipmentSlot.FEET, new ItemStack(Items.IRON_BOOTS));
+		});
+		context.waitFor(client -> client.player.getItemBySlot(EquipmentSlot.FEET).getItem() == Items.IRON_BOOTS
+				&& client.player.getItemBySlot(EquipmentSlot.LEGS).getItem() == Items.IRON_LEGGINGS
+				&& !client.player.getItemBySlot(EquipmentSlot.CHEST).hasFoil());
+
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			set(config.head, "minecraft:netherite_helmet", FitMode.STRETCH);
+			set(config.chest, "minecraft:netherite_chestplate", FitMode.STRETCH);
+			set(config.legs, "", FitMode.STRETCH);
+			set(config.feet, "", FitMode.STRETCH);
+
+			// Picked vanilla trim on a look
+			config.chest.trim = TrimMode.PICK;
+			config.chest.trimPattern = "minecraft:rib";
+			config.chest.trimMaterial = "minecraft:gold";
+			check(hasTrim(drawnArmor(client, EquipmentSlot.CHEST), "minecraft:rib", "minecraft:gold"), "Chest look should have a gold rib trim");
+
+			// Trim on real armor, no look needed, also on the inventory icon
+			config.legs.trim = TrimMode.PICK;
+			config.legs.trimPattern = "minecraft:silence";
+			config.legs.trimMaterial = "minecraft:diamond";
+			check(hasTrim(drawnArmor(client, EquipmentSlot.LEGS), "minecraft:silence", "minecraft:diamond"), "Real leggings should get the picked trim");
+			ItemStack wornLegs = client.player.getItemBySlot(EquipmentSlot.LEGS);
+			check(hasTrim(VanityCosmetics.inventoryIcon(wornLegs), "minecraft:silence", "minecraft:diamond"), "Leggings icon should show the picked trim");
+
+			// Custom design: two patterns in custom colors on the helmet, one on the boots
+			TrimLayer eye = config.head.design[0];
+			eye.enabled = true;
+			eye.pattern = "minecraft:eye";
+			eye.color = 0x00FFFF;
+			TrimLayer spire = config.head.design[1];
+			spire.enabled = true;
+			spire.pattern = "minecraft:spire";
+			spire.color = 0xFF2080;
+			TrimLayer bolt = config.feet.design[0];
+			bolt.enabled = true;
+			bolt.pattern = "minecraft:bolt";
+			bolt.color = 0xFFE000;
+
+			AvatarRenderState state = (AvatarRenderState) client.getEntityRenderDispatcher().getRenderer(client.player).createRenderState(client.player, 1.0F);
+			VanityRenderData data = state.getData(VanityClient.RENDER_DATA);
+			check(data != null && data.designs[CosmeticSlot.HEAD.ordinal()].length == 2, "Helmet should have 2 design layers");
+			check(data.designs[CosmeticSlot.FEET.ordinal()].length == 1, "Boots should have 1 design layer");
+		});
+		context.waitTicks(10);
+		context.takeScreenshot("16_trims_and_custom_designs");
+		setCamera(context, CameraType.THIRD_PERSON_BACK);
+		context.waitTicks(5);
+		context.takeScreenshot("17_trims_and_custom_designs_back");
+		setCamera(context, CameraType.THIRD_PERSON_FRONT);
+
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.TRIM));
+		context.waitTicks(10);
+		context.takeScreenshot("18_wardrobe_trim_page");
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.HEAD, VanityScreen.Page.DESIGN));
+		context.waitTicks(10);
+		context.takeScreenshot("19_wardrobe_design_page");
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.STYLE));
+		context.waitTicks(10);
+		context.takeScreenshot("20_wardrobe_style_page");
 		context.setScreen(() -> null);
 	}
 

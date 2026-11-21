@@ -21,6 +21,8 @@ import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.FitMode;
 import dev.susyst.vanity.config.SlotSettings;
+import dev.susyst.vanity.config.TrimLayer;
+import dev.susyst.vanity.config.Trims;
 import dev.susyst.vanity.config.VanityConfig;
 
 /** Fills in {@link VanityRenderData} while the player's render state is being extracted. */
@@ -67,54 +69,89 @@ public final class VanityCosmetics {
 			int i = slot.ordinal();
 			data.active[i] = false;
 			data.items[i].clear();
+			data.designs[i] = NO_DESIGN;
 			if (!config.enabled) continue;
 
+			extractSlot(slot, data, state, entity, resolver, config.get(slot));
+
+			// Custom trim design: drawn on whatever armor ends up shown in this slot
 			SlotSettings settings = config.get(slot);
-			ItemStack worn = entity.getItemBySlot(slot.equipmentSlot);
 
-			if (settings.invisible) {
-				hideRealArmor(slot, state);
-				continue;
+			if (!settings.invisible && settings.hasDesign() && HumanoidArmorLayer.shouldRender(equipment(slot, state), slot.equipmentSlot)) {
+				data.designs[i] = enabledLayers(settings);
+			}
+		}
+	}
+
+	private static final TrimLayer[] NO_DESIGN = new TrimLayer[0];
+
+	private static TrimLayer[] enabledLayers(SlotSettings settings) {
+		int count = 0;
+		for (TrimLayer layer : settings.design) if (layer.enabled) count++;
+		TrimLayer[] layers = new TrimLayer[count];
+		int n = 0;
+		for (TrimLayer layer : settings.design) if (layer.enabled) layers[n++] = layer.copy();
+		return layers;
+	}
+
+	private static void extractSlot(CosmeticSlot slot, VanityRenderData data, AvatarRenderState state, LivingEntity entity, ItemModelResolver resolver, SlotSettings settings) {
+		int i = slot.ordinal();
+
+		ItemStack worn = entity.getItemBySlot(slot.equipmentSlot);
+
+		if (settings.invisible) {
+			hideRealArmor(slot, state);
+			return;
+		}
+
+		ItemStack look = settings.stack();
+
+		if (look.isEmpty()) {
+			// No look: still apply glint, dye and trim options to your real armor
+			ItemStack real = equipment(slot, state);
+
+			if (settings.hasStyleOverrides() && HumanoidArmorLayer.shouldRender(real, slot.equipmentSlot)) {
+				setEquipment(slot, state, styled(real, real, settings));
 			}
 
-			ItemStack look = settings.stack();
-			if (look.isEmpty()) continue;
-			if (settings.onlyWhenWorn && worn.isEmpty()) continue;
+			return;
+		}
 
-			if (isWornHead(slot, look) && look.getItem() instanceof BlockItem blockItem
-					&& blockItem.getBlock() instanceof AbstractSkullBlock skull) {
-				// Player and mob heads: shown like a worn head, with the head's own skin.
-				state.headEquipment = ItemStack.EMPTY;
+		if (settings.onlyWhenWorn && worn.isEmpty()) return;
+
+		if (isWornHead(slot, look) && look.getItem() instanceof BlockItem blockItem
+				&& blockItem.getBlock() instanceof AbstractSkullBlock skull) {
+			// Player and mob heads: shown like a worn head, with the head's own skin.
+			state.headEquipment = ItemStack.EMPTY;
+			state.headItem.clear();
+			state.wornHeadType = skull.getType();
+			state.wornHeadProfile = look.get(DataComponents.PROFILE);
+			return;
+		}
+
+		if (isArmorLook(slot, look)) {
+			// Keep elytra wings visible: the chest look would replace them.
+			if (slot == CosmeticSlot.CHEST && worn.has(DataComponents.GLIDER)) return;
+
+			// Swap the armor the game draws: wearing diamond, shown as netherite.
+			setEquipment(slot, state, styled(look, equipment(slot, state), settings));
+
+			if (slot == CosmeticSlot.HEAD) {
 				state.headItem.clear();
-				state.wornHeadType = skull.getType();
-				state.wornHeadProfile = look.get(DataComponents.PROFILE);
-				continue;
+				state.wornHeadType = null;
 			}
 
-			if (isArmorLook(slot, look)) {
-				// Keep elytra wings visible: the chest look would replace them.
-				if (slot == CosmeticSlot.CHEST && worn.has(DataComponents.GLIDER)) continue;
+			return;
+		}
 
-				// Swap the armor the game draws: wearing diamond, shown as netherite.
-				setEquipment(slot, state, styled(look, equipment(slot, state), settings));
+		// Any other item or block: draw it fitted to the armor shape.
+		ItemDisplayContext context = settings.mode == FitMode.FREE ? ItemDisplayContext.HEAD : ItemDisplayContext.NONE;
+		resolver.updateForLiving(data.items[i], look, context, entity);
+		data.settings[i] = settings.copy();
+		data.active[i] = !data.items[i].isEmpty();
 
-				if (slot == CosmeticSlot.HEAD) {
-					state.headItem.clear();
-					state.wornHeadType = null;
-				}
-
-				continue;
-			}
-
-			// Any other item or block: draw it fitted to the armor shape.
-			ItemDisplayContext context = settings.mode == FitMode.FREE ? ItemDisplayContext.HEAD : ItemDisplayContext.NONE;
-			resolver.updateForLiving(data.items[i], look, context, entity);
-			data.settings[i] = settings.copy();
-			data.active[i] = !data.items[i].isEmpty();
-
-			if (data.active[i] && settings.hideArmor) {
-				hideRealArmor(slot, state);
-			}
+		if (data.active[i] && settings.hideArmor) {
+			hideRealArmor(slot, state);
 		}
 	}
 
@@ -132,7 +169,8 @@ public final class VanityCosmetics {
 		for (CosmeticSlot slot : CosmeticSlot.values()) {
 			if (player.getItemBySlot(slot.equipmentSlot) == stack) {
 				SlotSettings settings = config.get(slot);
-				return settings.invisible || settings.stack().isEmpty() ? null : slot;
+				if (settings.invisible) return null;
+				return !settings.stack().isEmpty() || settings.hasStyleOverrides() ? slot : null;
 			}
 		}
 
@@ -147,6 +185,7 @@ public final class VanityCosmetics {
 
 		SlotSettings settings = VanityClient.config().get(slot);
 		ItemStack look = settings.stack();
+		if (look.isEmpty()) return HumanoidArmorLayer.shouldRender(stack, slot.equipmentSlot) ? styled(stack, stack, settings) : stack;
 		return isArmorLook(slot, look) ? styled(look, stack, settings) : look;
 	}
 
@@ -162,11 +201,16 @@ public final class VanityCosmetics {
 			case OFF -> copy.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
 		}
 
-		if (settings.keepTrim) {
-			ArmorTrim trim = real.isEmpty() ? null : real.get(DataComponents.TRIM);
-			if (trim != null) copy.set(DataComponents.TRIM, trim);
-		} else {
-			copy.remove(DataComponents.TRIM);
+		switch (settings.trim) {
+			case REAL -> {
+				ArmorTrim trim = real.isEmpty() ? null : real.get(DataComponents.TRIM);
+				if (trim != null) copy.set(DataComponents.TRIM, trim);
+			}
+			case NONE -> copy.remove(DataComponents.TRIM);
+			case PICK -> {
+				ArmorTrim trim = Trims.create(settings.trimPattern, settings.trimMaterial);
+				if (trim != null) copy.set(DataComponents.TRIM, trim);
+			}
 		}
 
 		if (settings.customDye && isDyeable(copy)) {

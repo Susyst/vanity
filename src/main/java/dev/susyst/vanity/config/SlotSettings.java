@@ -23,8 +23,15 @@ public final class SlotSettings {
 	public boolean onlyWhenWorn = true;
 	/** Enchantment shine on armor looks. */
 	public GlintMode glint = GlintMode.AUTO;
-	/** Keep the armor trim of the armor you're really wearing. */
-	public boolean keepTrim = true;
+	/** Old 0.7 setting, read once and turned into {@link #trim}. */
+	public Boolean keepTrim;
+	/** Which trim the look shows. */
+	public TrimMode trim = TrimMode.REAL;
+	/** Vanilla trim pattern and material used when {@link #trim} is PICK. */
+	public String trimPattern = "minecraft:sentry";
+	public String trimMaterial = "minecraft:gold";
+	/** Custom trim design: up to three trim patterns in any color, drawn on top of the armor. */
+	public TrimLayer[] design = newDesign();
 	/** Recolor dyeable looks (leather) with {@link #dyeColor}. */
 	public boolean customDye;
 	/** RGB dye color, default is undyed leather. */
@@ -95,12 +102,66 @@ public final class SlotSettings {
 		return this.itemStack != null;
 	}
 
-	/** Resets glint, trim and dye. */
-	public void resetArmorStyle() {
+	public static final int DESIGN_LAYERS = 3;
+
+	private static TrimLayer[] newDesign() {
+		TrimLayer[] layers = new TrimLayer[DESIGN_LAYERS];
+		for (int i = 0; i < layers.length; i++) layers[i] = new TrimLayer();
+		return layers;
+	}
+
+	/** True if glint, dye or trim change anything, so even your real armor gets restyled. */
+	public boolean hasStyleOverrides() {
+		return this.glint != GlintMode.AUTO || this.customDye || this.trim != TrimMode.REAL;
+	}
+
+	/** True if any custom trim design layer is on. */
+	public boolean hasDesign() {
+		for (TrimLayer layer : this.design) {
+			if (layer.enabled) return true;
+		}
+
+		return false;
+	}
+
+	/** Resets glint and dye. */
+	public void resetStyle() {
 		this.glint = GlintMode.AUTO;
-		this.keepTrim = true;
 		this.customDye = false;
 		this.dyeColor = 0xA06540;
+	}
+
+	public void resetTrim() {
+		this.trim = TrimMode.REAL;
+		this.trimPattern = "minecraft:sentry";
+		this.trimMaterial = "minecraft:gold";
+	}
+
+	public void resetDesign() {
+		this.design = newDesign();
+	}
+
+	/** Resets glint, dye, trim and design. */
+	public void resetArmorStyle() {
+		this.resetStyle();
+		this.resetTrim();
+		this.resetDesign();
+	}
+
+	public void copyStyleFrom(SlotSettings other) {
+		this.glint = other.glint;
+		this.customDye = other.customDye;
+		this.dyeColor = other.dyeColor;
+	}
+
+	public void copyTrimFrom(SlotSettings other) {
+		this.trim = other.trim;
+		this.trimPattern = other.trimPattern;
+		this.trimMaterial = other.trimMaterial;
+	}
+
+	public void copyDesignFrom(SlotSettings other) {
+		for (int i = 0; i < DESIGN_LAYERS; i++) this.design[i] = other.design[i].copy();
 	}
 
 	public void resetTransform() {
@@ -121,7 +182,11 @@ public final class SlotSettings {
 		copy.invisible = this.invisible;
 		copy.onlyWhenWorn = this.onlyWhenWorn;
 		copy.glint = this.glint;
-		copy.keepTrim = this.keepTrim;
+		copy.trim = this.trim;
+		copy.trimPattern = this.trimPattern;
+		copy.trimMaterial = this.trimMaterial;
+		copy.resetDesign();
+		copy.copyDesignFrom(this);
 		copy.customDye = this.customDye;
 		copy.dyeColor = this.dyeColor;
 		copy.mode = this.mode;
@@ -142,6 +207,24 @@ public final class SlotSettings {
 		if (this.itemStack != null && this.itemStack.isJsonNull()) this.itemStack = null;
 		if (this.mode == null) this.mode = FitMode.STRETCH;
 		if (this.glint == null) this.glint = GlintMode.AUTO;
+		if (this.trim == null) this.trim = TrimMode.REAL;
+		if (Boolean.FALSE.equals(this.keepTrim) && this.trim == TrimMode.REAL) this.trim = TrimMode.NONE;
+		this.keepTrim = null;
+		if (this.trimPattern == null || this.trimPattern.isBlank()) this.trimPattern = "minecraft:sentry";
+		if (this.trimMaterial == null || this.trimMaterial.isBlank()) this.trimMaterial = "minecraft:gold";
+
+		if (this.design == null || this.design.length != DESIGN_LAYERS) {
+			TrimLayer[] fixed = newDesign();
+			for (int i = 0; this.design != null && i < Math.min(this.design.length, DESIGN_LAYERS); i++) {
+				if (this.design[i] != null) fixed[i] = this.design[i];
+			}
+			this.design = fixed;
+		}
+
+		for (int i = 0; i < DESIGN_LAYERS; i++) {
+			if (this.design[i] == null) this.design[i] = new TrimLayer();
+			this.design[i].sanitize();
+		}
 		this.dyeColor &= 0xFFFFFF;
 		if (!Float.isFinite(this.scale) || this.scale <= 0.0F) this.scale = 1.0F;
 		if (!Float.isFinite(this.offsetX)) this.offsetX = 0.0F;
