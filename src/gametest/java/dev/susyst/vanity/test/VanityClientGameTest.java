@@ -20,6 +20,8 @@ import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.DyedItemColor;
 import net.minecraft.world.item.component.ResolvableProfile;
 import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -31,6 +33,7 @@ import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.FitMode;
 import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.render.VanityCosmetics;
 import dev.susyst.vanity.screen.VanityScreen;
 
 /**
@@ -131,6 +134,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("08b_gold_look_with_texture_pack");
 
 			testSkyBlockLooks(context, singleplayer);
+			testInventoryIcons(context, singleplayer);
 		}
 	}
 
@@ -211,6 +215,64 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.waitTicks(10);
 		context.takeScreenshot("10_wardrobe_skyblock_head");
 		context.setScreen(() -> null);
+	}
+
+	/**
+	 * Wearing iron helmet + diamond chestplate with golden helmet / netherite chestplate looks: the worn items' icons in
+	 * the inventory show the looks, a spare diamond chestplate in the hotbar does not, and tooltips keep the real name.
+	 */
+	private static void testInventoryIcons(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		singleplayer.getServer().runCommand("gamemode survival @a");
+		singleplayer.getServer().runOnServer(server -> {
+			var player = singleplayer.getConnection().getServerPlayer();
+			player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+			player.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
+			player.setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.GOLDEN_LEGGINGS));
+			player.setItemSlot(EquipmentSlot.FEET, new ItemStack(Items.NETHERITE_BOOTS));
+			player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_CHESTPLATE));
+		});
+		context.waitFor(client -> client.player.getItemBySlot(EquipmentSlot.CHEST).getItem() == Items.DIAMOND_CHESTPLATE
+				&& client.player.getItemBySlot(EquipmentSlot.HEAD).getItem() == Items.IRON_HELMET
+				&& client.player.getInventory().getItem(0).getItem() == Items.DIAMOND_CHESTPLATE);
+
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			config.enabled = true;
+			config.showInInventory = true;
+			set(config.head, "minecraft:golden_helmet", FitMode.STRETCH);
+			set(config.chest, "minecraft:netherite_chestplate", FitMode.STRETCH);
+			set(config.legs, "", FitMode.STRETCH);
+			set(config.feet, "", FitMode.STRETCH);
+
+			ItemStack wornChest = client.player.getItemBySlot(EquipmentSlot.CHEST);
+			ItemStack spareChest = client.player.getInventory().getItem(0);
+
+			if (VanityCosmetics.inventoryIcon(wornChest).getItem() != Items.NETHERITE_CHESTPLATE) {
+				throw new AssertionError("Worn chestplate icon should show the netherite look");
+			}
+
+			if (VanityCosmetics.inventoryIcon(spareChest) != spareChest) {
+				throw new AssertionError("A chestplate you're not wearing must keep its own icon");
+			}
+
+			String tooltip = Screen.getTooltipFromItem(client, wornChest).stream().map(Component::getString).reduce("", (a, b) -> a + "\n" + b);
+
+			if (!tooltip.contains("Diamond Chestplate") || !tooltip.contains("Vanity look: Netherite Chestplate")) {
+				throw new AssertionError("Tooltip should keep the real name and add the look: " + tooltip);
+			}
+		});
+
+		context.setScreen(() -> new InventoryScreen(Minecraft.getInstance().player));
+		context.waitTicks(10);
+		context.takeScreenshot("11_inventory_icons_show_looks");
+		context.setScreen(() -> null);
+
+		context.runOnClient(client -> VanityClient.config().showInInventory = false);
+		context.setScreen(() -> new InventoryScreen(Minecraft.getInstance().player));
+		context.waitTicks(10);
+		context.takeScreenshot("12_inventory_icons_toggle_off");
+		context.setScreen(() -> null);
+		context.runOnClient(client -> VanityClient.config().showInInventory = true);
 	}
 
 	private static final String PACK = "vanity_test_pack";

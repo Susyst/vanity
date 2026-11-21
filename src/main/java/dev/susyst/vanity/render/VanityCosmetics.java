@@ -1,6 +1,7 @@
 package dev.susyst.vanity.render;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.item.ItemModelResolver;
@@ -101,6 +102,36 @@ public final class VanityCosmetics {
 				hideRealArmor(slot, state);
 			}
 		}
+	}
+
+	/**
+	 * The slot whose look applies to this exact item: the item must be the one you are wearing in that slot (not a copy
+	 * elsewhere in the inventory) and the slot must have a look. Null otherwise.
+	 */
+	public static CosmeticSlot wornSlotWithLook(ItemStack stack) {
+		if (stack.isEmpty()) return null;
+		VanityConfig config = VanityClient.config();
+		if (!config.enabled) return null;
+		LocalPlayer player = Minecraft.getInstance().player;
+		if (player == null) return null;
+
+		for (CosmeticSlot slot : CosmeticSlot.values()) {
+			if (player.getItemBySlot(slot.equipmentSlot) == stack) {
+				return config.get(slot).stack().isEmpty() ? null : slot;
+			}
+		}
+
+		return null;
+	}
+
+	/** The icon to draw in the inventory for this item: its look if you're wearing it in a slot with a look. */
+	public static ItemStack inventoryIcon(ItemStack stack) {
+		if (!VanityClient.config().showInInventory) return stack;
+		CosmeticSlot slot = wornSlotWithLook(stack);
+		if (slot == null) return stack;
+
+		ItemStack look = VanityClient.config().get(slot).stack();
+		return isArmorLook(slot, look) ? withLookOf(look, stack) : look;
 	}
 
 	/** Keeps the enchantment shine and armor trim of the armor you're really wearing. */

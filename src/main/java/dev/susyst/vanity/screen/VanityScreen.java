@@ -46,6 +46,7 @@ public final class VanityScreen extends Screen {
 	private Button modeButton;
 	private Button hideButton;
 	private Button enabledButton;
+	private Button inventoryButton;
 	private Button resetButton;
 	private ValueSlider offsetX;
 	private ValueSlider offsetY;
@@ -183,10 +184,16 @@ public final class VanityScreen extends Screen {
 		this.enabledButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
 			config().enabled = !config().enabled;
 			this.refresh();
-		}).bounds(this.panelX, bottomY, halfW, ROW).build());
+		}).bounds(this.panelX, bottomY, thirdW, ROW).build());
+
+		this.inventoryButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+			config().showInInventory = !config().showInInventory;
+			this.refresh();
+		}).bounds(this.panelX + thirdW + GAP, bottomY, thirdW, ROW).build());
+		this.inventoryButton.setTooltip(Tooltip.create(Component.literal("Also show the looks on your worn armor's icons in the inventory")));
 
 		this.addRenderableWidget(Button.builder(Component.literal("Done"), b -> this.onClose())
-				.bounds(this.panelX + halfW + GAP, bottomY, halfW, ROW)
+				.bounds(this.panelX + 2 * (thirdW + GAP), bottomY, thirdW, ROW)
 				.build());
 
 		this.refresh();
@@ -273,6 +280,7 @@ public final class VanityScreen extends Screen {
 		this.modeButton.setTooltip(fitted ? Tooltip.create(Component.literal(s.mode.description)) : null);
 		this.hideButton.setMessage(Component.literal("Hide armor: " + (s.hideArmor ? "ON" : "OFF")));
 		this.enabledButton.setMessage(Component.literal("Cosmetics: " + (config().enabled ? "ON" : "OFF")));
+		this.inventoryButton.setMessage(Component.literal("Inv icons: " + (config().showInInventory ? "ON" : "OFF")));
 		this.offsetX.setRealValue(s.offsetX);
 		this.offsetY.setRealValue(s.offsetY);
 		this.offsetZ.setRealValue(s.offsetZ);

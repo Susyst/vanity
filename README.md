@@ -8,12 +8,15 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.6.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.7.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. Click **Armor look** to change all four slots at once: Leather, Chainmail, Iron, Gold, Copper, Diamond,
    Netherite, then Off (your real armor).
 4. For one slot only, pick its tab and type an armor id (`netherite_chestplate`, `golden_helmet`...), or hold one and
    press **Held**. **Clear** goes back to your real armor for that slot.
+
+The look also shows on the icons of the armor you're wearing, in your inventory (turn off with **Inv icons**). Tooltips
+keep the real item's name and add a "Vanity look" line.
 
 Settings save to `config/vanity.json`. Only you see the cosmetics.
 

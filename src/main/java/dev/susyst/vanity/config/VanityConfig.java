@@ -31,6 +31,8 @@ public final class VanityConfig {
 
 	/** Master switch for all cosmetics. */
 	public boolean enabled = true;
+	/** Also show the looks on the icons of the armor you're wearing, in your inventory. */
+	public boolean showInInventory = true;
 	public SlotSettings head = new SlotSettings();
 	public SlotSettings chest = new SlotSettings();
 	public SlotSettings legs = new SlotSettings();

@@ -3,7 +3,8 @@
 	"package": "dev.susyst.vanity.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"AvatarRendererMixin"
+		"AvatarRendererMixin",
+		"GuiGraphicsExtractorMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
