@@ -1,6 +1,16 @@
 package dev.susyst.vanity.test;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.concurrent.CompletableFuture;
+
 import net.minecraft.client.CameraType;
+import net.minecraft.client.Minecraft;
+import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -100,7 +110,58 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("07_wardrobe_screen");
 			context.setScreen(() -> null);
 			context.waitTicks(2);
+
+			// Texture packs: wearing diamond, shown as gold, with a pack that repaints gold armor
+			singleplayer.getServer().runCommand("item replace entity @a armor.chest with minecraft:diamond_chestplate");
+			setCosmetics(context, FitMode.STRETCH, "minecraft:golden_helmet", "minecraft:golden_chestplate", "minecraft:golden_leggings", "minecraft:golden_boots");
+			context.waitTicks(10);
+			context.takeScreenshot("08a_gold_look_vanilla_textures");
+
+			enableTestTexturePack(context);
+			context.waitTicks(10);
+			context.takeScreenshot("08b_gold_look_with_texture_pack");
 		}
+	}
+
+	private static final String PACK = "vanity_test_pack";
+	private static final String[] PACK_FILES = {
+			"pack.mcmeta",
+			"assets/minecraft/textures/entity/equipment/humanoid/gold.png",
+			"assets/minecraft/textures/entity/equipment/humanoid_leggings/gold.png"
+	};
+
+	/** Installs a real texture pack into the resourcepacks folder, turns it on and reloads resources (like F3+T). */
+	private static void enableTestTexturePack(ClientGameTestContext context) {
+		context.runOnClient(client -> {
+			Path packDir = client.gameDirectory.toPath().resolve("resourcepacks").resolve(PACK);
+
+			for (String file : PACK_FILES) {
+				Path target = packDir.resolve(file);
+
+				try (InputStream in = VanityClientGameTest.class.getResourceAsStream("/" + PACK + "/" + file)) {
+					if (in == null) throw new AssertionError("Missing test pack file " + file);
+					Files.createDirectories(target.getParent());
+					Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+				} catch (IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			}
+
+			PackRepository packs = client.getResourcePackRepository();
+			packs.reload();
+
+			if (!packs.addPack("file/" + PACK)) {
+				throw new AssertionError("Test pack was not found. Available packs: " + packs.getAvailableIds());
+			}
+		});
+
+		CompletableFuture<Void> reload = context.computeOnClient(Minecraft::reloadResourcePacks);
+		context.waitFor(client -> reload.isDone() && client.gui.overlay() == null, 20 * 120);
+		context.runOnClient(client -> {
+			if (!client.getResourcePackRepository().getSelectedIds().contains("file/" + PACK)) {
+				throw new AssertionError("Test pack is not active after reload");
+			}
+		});
 	}
 
 	/** Hides the HUD, chat and toasts so the player is clearly visible in screenshots. */
