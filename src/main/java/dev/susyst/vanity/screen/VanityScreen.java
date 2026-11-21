@@ -559,10 +559,10 @@ public final class VanityScreen extends Screen {
 
 		switch (this.page) {
 			case LOOK -> this.lookStatus(graphics, this.current());
-			case STYLE -> this.hint(graphics, "Works on the look, or on your real armor if this slot has no look.");
-			case TRIM -> this.hint(graphics, "Shows on the look or your real armor, and on inventory icons. Texture packs apply.");
-			case DESIGN -> this.hint(graphics, "Stack up to 3 trim patterns, each in any color. Drawn over the armor in this slot.");
-			case FIT -> this.hint(graphics, "For items and blocks: sized to the armor shape.");
+			case STYLE -> this.hint(graphics, "Also styles your real armor when no look is set.");
+			case TRIM -> this.hint(graphics, "Also on inventory icons. Texture packs apply.");
+			case DESIGN -> this.hint(graphics, "Up to 3 patterns in any color, over your armor.");
+			case FIT -> this.hint(graphics, "Items and blocks, sized to the armor shape.");
 		}
 
 		LocalPlayer player = this.minecraft.player;
