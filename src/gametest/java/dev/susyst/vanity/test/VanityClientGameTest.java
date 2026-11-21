@@ -666,7 +666,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 
 		// Next outfit key wraps around to the first outfit
 		context.runOnClient(client -> {
-			if (client.gui.hud.isHidden()) client.gui.hud.toggle();
+			showHud(client);
 		});
 		context.getInput().pressKey(VanityClient.nextOutfitKey());
 		context.waitTicks(5);
@@ -744,7 +744,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			flow.pattern = "minecraft:flow";
 			flow.color = 0xFFFFFF;
 			config.chest.designAnimation = DyeAnimation.RAINBOW;
-			config.chest.glow = 0.7F;
+			config.chest.glow = 1.0F;
 			config.chest.glowAnimation = GlowAnimation.RAINBOW;
 			config.legs.glow = 1.0F;
 			config.legs.glowAnimation = GlowAnimation.BREATHE;
@@ -832,7 +832,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			check(skin.look().is(Items.NETHERITE_SWORD), "Skin look should be the off-hand netherite sword, got " + skin.look());
 			check(ItemSkins.skinned(client.player.getMainHandItem()).is(Items.NETHERITE_SWORD), "Held diamond sword should be drawn as netherite");
 			check(ItemSkins.skinned(new ItemStack(Items.IRON_SWORD)).is(Items.IRON_SWORD), "Other items keep their look");
-			if (client.gui.hud.isHidden()) client.gui.hud.toggle();
+			showHud(client);
 		});
 		context.waitTicks(5);
 		context.takeScreenshot("32b_sword_skin_third_person");
@@ -844,6 +844,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		// SkyBlock item: matched by its SkyBlock id, not just its type
 		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:iron_sword[minecraft:custom_data={id:\"HYPERION\"},minecraft:custom_name=\"Hyperion\"]");
 		context.waitTicks(5);
+		context.runOnClient(VanityClientGameTest::showHud);
 		context.setScreen(VanityScreen::hand);
 		context.waitTicks(5);
 		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("New from held"));
@@ -892,7 +893,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			check(config.chest.item.equals("minecraft:netherite_chestplate"), "Switched to the netherite outfit");
 			AutoOutfits.onJoin(client);
 			check(config.outfit == 0 && config.chest.item.equals("minecraft:leather_chestplate"), "Joining should put the auto outfit back on, got " + config.chest.item);
-			if (client.gui.hud.isHidden()) client.gui.hud.toggle();
+			showHud(client);
 		});
 		context.waitTicks(5);
 		context.takeScreenshot("33b_auto_outfit_on_join");
@@ -950,6 +951,13 @@ public class VanityClientGameTest implements FabricClientGameTest {
 				client.gui.hud.toggle();
 			}
 		});
+	}
+
+	/** Shows the HUD (hotbar, action bar) with chat and toasts cleared. */
+	private static void showHud(Minecraft client) {
+		client.gui.toastManager().clear();
+		client.gui.hud.getChat().clearMessages(false);
+		if (client.gui.hud.isHidden()) client.gui.hud.toggle();
 	}
 
 	private static void setCamera(ClientGameTestContext context, CameraType cameraType) {
