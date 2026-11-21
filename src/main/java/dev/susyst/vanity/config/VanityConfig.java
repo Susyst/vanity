@@ -45,6 +45,8 @@ public final class VanityConfig {
 	public List<Outfit> outfits = new ArrayList<>();
 	/** Index of the outfit worn or saved last, or -1. */
 	public int outfit = -1;
+	/** Held-item skins. */
+	public List<ItemSkin> itemSkins = new ArrayList<>();
 
 	public static final int MAX_OUTFITS = 12;
 
@@ -132,6 +134,29 @@ public final class VanityConfig {
 		while (this.outfits.size() > MAX_OUTFITS) this.outfits.removeLast();
 		for (Outfit outfit : this.outfits) outfit.sanitize();
 		if (this.outfit >= this.outfits.size()) this.outfit = -1;
+
+		if (this.itemSkins == null) this.itemSkins = new ArrayList<>();
+		this.itemSkins.removeIf(java.util.Objects::isNull);
+		for (ItemSkin skin : this.itemSkins) skin.sanitize();
+	}
+
+	/** The outfit set to be worn on this server or world, or null. */
+	public Outfit outfitFor(String serverKey) {
+		if (serverKey == null) return null;
+
+		for (Outfit outfit : this.outfits) {
+			if (outfit.servers.contains(serverKey)) return outfit;
+		}
+
+		return null;
+	}
+
+	/** Makes {@code outfit} the one worn on this server (or stops that if it already was). Only one outfit per server. */
+	public void toggleAutoOutfit(Outfit outfit, String serverKey) {
+		if (outfit == null || serverKey == null) return;
+		boolean wasOn = outfit.servers.contains(serverKey);
+		for (Outfit other : this.outfits) other.servers.remove(serverKey);
+		if (!wasOn) outfit.servers.add(serverKey);
 	}
 
 	/** The current world's registries, needed to read exact saved items. Null when not in a world. */

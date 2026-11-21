@@ -65,6 +65,7 @@ public final class VanityCosmetics {
 
 	public static void extract(VanityRenderData data, AvatarRenderState state, LivingEntity entity, ItemModelResolver resolver) {
 		VanityConfig config = VanityClient.config();
+		long now = Util.getMillis();
 
 		for (CosmeticSlot slot : CosmeticSlot.values()) {
 			int i = slot.ordinal();
@@ -75,6 +76,7 @@ public final class VanityCosmetics {
 			data.opacity[i] = 1.0F;
 			data.glow[i] = 0.0F;
 			data.trimGlow[i] = 0.0F;
+			data.glowTint[i] = -1;
 			if (!config.enabled) continue;
 
 			SlotSettings settings = config.get(slot);
@@ -85,10 +87,13 @@ public final class VanityCosmetics {
 			boolean armorShown = !settings.invisible && HumanoidArmorLayer.shouldRender(shown, slot.equipmentSlot) && !shown.has(DataComponents.GLIDER);
 			if (!armorShown) continue;
 
-			if (settings.hasDesign()) data.designs[i] = enabledLayers(settings);
+			if (settings.hasDesign()) data.designs[i] = enabledLayers(settings, now);
 			data.opacity[i] = settings.opacity;
-			data.glow[i] = settings.glow;
-			data.trimGlow[i] = settings.trimGlowAmount;
+			// Animated glow: strength (breathe, flicker) and color (rainbow) for this frame
+			float strength = settings.glowAnimation.strength(settings.dyeSpeed, now);
+			data.glow[i] = settings.glow * strength;
+			data.trimGlow[i] = settings.trimGlowAmount * strength;
+			data.glowTint[i] = settings.glowAnimation.tint(settings.dyeSpeed, now);
 
 			if (settings.hasCustomArmorRendering()) {
 				data.armor[i] = shown;
@@ -101,12 +106,21 @@ public final class VanityCosmetics {
 
 	private static final TrimLayer[] NO_DESIGN = new TrimLayer[0];
 
-	private static TrimLayer[] enabledLayers(SlotSettings settings) {
+	/** The design's shown layers, with their colors animated for this frame (each layer a bit out of step). */
+	private static TrimLayer[] enabledLayers(SlotSettings settings, long now) {
 		int count = 0;
 		for (TrimLayer layer : settings.design) if (layer.enabled) count++;
 		TrimLayer[] layers = new TrimLayer[count];
 		int n = 0;
-		for (TrimLayer layer : settings.design) if (layer.enabled) layers[n++] = layer.copy();
+
+		for (TrimLayer layer : settings.design) {
+			if (!layer.enabled) continue;
+			TrimLayer copy = layer.copy();
+			long offset = (long) (n * 2000.0F / settings.dyeSpeed);
+			copy.color = settings.designAnimation.color(layer.color, settings.dyeSpeed, now + offset);
+			layers[n++] = copy;
+		}
+
 		return layers;
 	}
 
@@ -197,7 +211,7 @@ public final class VanityCosmetics {
 	public static ItemStack inventoryIcon(ItemStack stack) {
 		if (!VanityClient.config().showInInventory) return stack;
 		CosmeticSlot slot = wornSlotWithLook(stack);
-		if (slot == null) return stack;
+		if (slot == null) return ItemSkins.find(stack) != null && ItemSkins.isOwn(stack) ? ItemSkins.skinned(stack) : stack;
 
 		SlotSettings settings = VanityClient.config().get(slot);
 		ItemStack look = settings.stack();

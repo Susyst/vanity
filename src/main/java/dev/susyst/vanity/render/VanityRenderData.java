@@ -21,10 +21,13 @@ public final class VanityRenderData {
 	public final float[] opacity = new float[CosmeticSlot.values().length];
 	public final float[] glow = new float[CosmeticSlot.values().length];
 	public final float[] trimGlow = new float[CosmeticSlot.values().length];
+	/** RGB color the glow is tinted with right now (rainbow glow), or -1 for the armor's own colors. */
+	public final int[] glowTint = new int[CosmeticSlot.values().length];
 
 	public VanityRenderData() {
 		Arrays.fill(this.armor, ItemStack.EMPTY);
 		Arrays.fill(this.opacity, 1.0F);
+		Arrays.fill(this.glowTint, -1);
 
 		for (int i = 0; i < this.items.length; i++) {
 			this.items[i] = new ItemStackRenderState();
@@ -39,6 +42,7 @@ public final class VanityRenderData {
 		Arrays.fill(this.opacity, 1.0F);
 		Arrays.fill(this.glow, 0.0F);
 		Arrays.fill(this.trimGlow, 0.0F);
+		Arrays.fill(this.glowTint, -1);
 
 		for (ItemStackRenderState item : this.items) {
 			item.clear();

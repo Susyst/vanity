@@ -8,7 +8,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.11.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.12.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. On the **Look** page, open **All slots look like** to change all four slots at once: Leather, Chainmail, Iron,
    Gold, Copper, Diamond or Netherite (**Real armor** turns it off).
@@ -20,18 +20,25 @@ once), then a page. Every choice with more than two options is a dropdown.
 - **Look**: what the slot looks like (armor id, Held, Worn, Clear), plus **Invisible** and **No armor: Hide/Show**
   (by default a look disappears when you take that armor off).
 - **Style**: **Glint** (Real / On / Off), **Dye** for leather: Solid, **Rainbow**, **Pulse** or **Shimmer**, with a
-  **Speed** slider (colors, RGB sliders, hex), **Opacity**
+  **Speed** slider (colors, RGB sliders, hex), a glow animation (**Steady**, **Breathe**, **Rainbow glow**, **Flicker**),
+  **Opacity**
   (see-through armor), **Glow** (armor that stays bright in the dark) and **Trim glow** (a soft glow on trims and
   designs).
 - **Trim**: keep your armor's trim, no trim, or pick any vanilla pattern and material.
-- **Design**: custom trims, up to 3 trim patterns stacked, each in any color.
+- **Design**: custom trims, up to 3 trim patterns stacked, each in any color. **Colors** animates them on any armor
+  (Rainbow, Pulse, Shimmer).
 - **Rune**: particle effects on each piece, like SkyBlock runes but bigger: 18 effects in 6 shapes (halo, orbit
   rings, spiral, wings, aura, trail). **Detail** is how many evenly spaced points make the shape (the whole shape is
   always drawn), **Length** how long each point lasts. **React**: a burst of the rune when you get hit, and twice as
   dense, bigger and faster while sprinting (Hit / Sprint / Both / Off). Only you see them; press F5.
 - **Outfits**: **Save new** stores all four slots as an outfit (looks, styles, trims, designs and runes). Pick one to
   wear it, rename it, **Update** it with your current look or **Delete** it. Press **N** in game for the next outfit
-  (rebindable; there's also an unbound Previous outfit key). Up to 12 outfits.
+  (rebindable; there's also an unbound Previous outfit key). Up to 12 outfits. **Auto-wear** puts the picked outfit on
+  every time you join the server (or singleplayer world) you're in now.
+- **Hand** tab, item skins: hold an item and press **New from held**, then type a look id (`netherite_sword`) or hold
+  the look item and press **Held** (or **Off** for your off hand). The item you hold is drawn as the look in first and
+  third person, in your hotbar and inventory, with texture packs. SkyBlock items match by their SkyBlock id, so only
+  that item gets the skin; other items match by type. The real item still works the same.
 
 Style and Trim also work on your real armor when no look is set. On a single slot, **All slots** copies that page's
 settings to the other slots. Items that aren't armor (like a glass block) are fitted to the armor shape automatically.

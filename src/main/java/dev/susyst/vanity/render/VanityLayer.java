@@ -120,10 +120,13 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 			}
 		}
 
+		int tint = data.glowTint[i];
+
 		if (glowing) {
 			for (EquipmentClientInfo.Layer layer : layers) {
 				int color = layerColor(layer, dye);
 				if (color == 0) continue;
+				if (tint >= 0) color = tint;
 				RenderType type = VanityRenderTypes.armorGlow(layer.getTextureLocation(layerType));
 				collector.order(GLOW_ORDER).submitModel(model, state, poseStack, type, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(color, glow * opacity), (UvMapping) null, 0);
 			}
@@ -141,7 +144,7 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 			float trimGlow = data.trimGlow[i];
 
 			if (trimGlow > 0.005F) {
-				collector.order(TRIM_ORDER + 1).submitModel(model, state, poseStack, VanityRenderTypes.armorGlow(texture), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(color, trimGlow * MAX_TRIM_GLOW * opacity), (UvMapping) null, 0);
+				collector.order(TRIM_ORDER + 1).submitModel(model, state, poseStack, VanityRenderTypes.armorGlow(texture), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(tint >= 0 ? tint : color, trimGlow * MAX_TRIM_GLOW * opacity), (UvMapping) null, 0);
 			}
 		}
 

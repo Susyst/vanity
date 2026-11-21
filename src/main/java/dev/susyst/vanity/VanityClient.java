@@ -18,13 +18,16 @@ import net.minecraft.util.RandomSource;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.LivingEntityRenderLayerRegistrationCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
 
 import dev.susyst.vanity.config.CosmeticSlot;
+import dev.susyst.vanity.config.ItemSkin;
 import dev.susyst.vanity.config.Outfit;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.render.RuneParticles;
 import dev.susyst.vanity.render.VanityCosmetics;
 import dev.susyst.vanity.render.VanityLayer;
@@ -103,10 +106,20 @@ public final class VanityClient implements ClientModInitializer {
 		// The real item keeps its name in tooltips; add a line saying what it looks like.
 		ItemTooltipCallback.EVENT.register((stack, tooltipContext, tooltipFlag, lines) -> {
 			CosmeticSlot slot = VanityCosmetics.wornSlotWithLook(stack);
-			if (slot == null) return;
-			Component line = Component.literal("Vanity look: ").append(config.get(slot).stack().getHoverName()).withStyle(ChatFormatting.GRAY);
-			lines.add(Math.min(1, lines.size()), line);
+			Component line = null;
+
+			if (slot != null) {
+				line = Component.literal("Vanity look: ").append(config.get(slot).stack().getHoverName()).withStyle(ChatFormatting.GRAY);
+			} else if (ItemSkins.isOwn(stack)) {
+				ItemSkin skin = ItemSkins.find(stack);
+				if (skin != null) line = Component.literal("Vanity skin: ").append(skin.look().getHoverName()).withStyle(ChatFormatting.GRAY);
+			}
+
+			if (line != null) lines.add(Math.min(1, lines.size()), line);
 		});
+
+		// Put on the outfit picked for this server or world
+		ClientPlayConnectionEvents.JOIN.register((listener, sender, client) -> client.execute(() -> AutoOutfits.onJoin(client)));
 
 		LivingEntityRenderLayerRegistrationCallback.EVENT.register((entityType, entityRenderer, registrationHelper, context) -> {
 			if (entityRenderer instanceof AvatarRenderer<?> avatarRenderer) {

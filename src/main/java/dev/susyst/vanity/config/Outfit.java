@@ -7,6 +7,8 @@ public final class Outfit {
 	public SlotSettings chest = new SlotSettings();
 	public SlotSettings legs = new SlotSettings();
 	public SlotSettings feet = new SlotSettings();
+	/** Servers and worlds (see {@code ServerKeys}) where this outfit is put on automatically when you join. */
+	public java.util.List<String> servers = new java.util.ArrayList<>();
 
 	/** An outfit holding a copy of what the config shows right now. */
 	public static Outfit capture(String name, VanityConfig config) {
@@ -38,6 +40,8 @@ public final class Outfit {
 		if (this.chest == null) this.chest = new SlotSettings();
 		if (this.legs == null) this.legs = new SlotSettings();
 		if (this.feet == null) this.feet = new SlotSettings();
+		if (this.servers == null) this.servers = new java.util.ArrayList<>();
+		this.servers.removeIf(key -> key == null || key.isBlank());
 		this.head.sanitize();
 		this.chest.sanitize();
 		this.legs.sanitize();

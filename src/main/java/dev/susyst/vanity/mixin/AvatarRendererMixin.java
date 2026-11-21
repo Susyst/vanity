@@ -14,6 +14,7 @@ import net.minecraft.client.renderer.item.ItemModelResolver;
 import net.minecraft.world.entity.Avatar;
 
 import dev.susyst.vanity.VanityClient;
+import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.render.VanityCosmetics;
 import dev.susyst.vanity.render.VanityRenderData;
 
@@ -42,5 +43,6 @@ public abstract class AvatarRendererMixin<AvatarlikeEntity extends Avatar & Clie
 		}
 
 		VanityCosmetics.extract(data, state, entity, this.vanity$itemModelResolver);
+		if (VanityClient.config().enabled) ItemSkins.applyToHands(state, entity, this.vanity$itemModelResolver);
 	}
 }

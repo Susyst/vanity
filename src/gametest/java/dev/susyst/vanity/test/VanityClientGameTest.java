@@ -34,7 +34,11 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 
+import dev.susyst.vanity.AutoOutfits;
 import dev.susyst.vanity.VanityClient;
+import dev.susyst.vanity.config.GlowAnimation;
+import dev.susyst.vanity.config.ItemSkin;
+import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.config.DyeAnimation;
 import dev.susyst.vanity.config.RuneReaction;
 import dev.susyst.vanity.render.RuneParticles;
@@ -157,6 +161,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testAnimatedDye(context);
 			testOutfits(context);
 			testReactiveRunes(context, singleplayer);
+			testAnimatedDesignAndGlow(context, singleplayer);
+			testItemSkins(context, singleplayer);
+			testAutoOutfit(context);
 		}
 	}
 
@@ -723,6 +730,173 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.waitTicks(10);
 		context.takeScreenshot("30d_wardrobe_rune_react");
 		context.setScreen(() -> null);
+	}
+
+	/** Rainbow design colors and rainbow/breathing glow on non-leather armor: they must change from frame to frame. */
+	private static void testAnimatedDesignAndGlow(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+
+			for (CosmeticSlot slot : CosmeticSlot.values()) config.get(slot).rune.enabled = false;
+
+			TrimLayer flow = config.chest.design[0];
+			flow.enabled = true;
+			flow.pattern = "minecraft:flow";
+			flow.color = 0xFFFFFF;
+			config.chest.designAnimation = DyeAnimation.RAINBOW;
+			config.chest.glow = 0.7F;
+			config.chest.glowAnimation = GlowAnimation.RAINBOW;
+			config.legs.glow = 1.0F;
+			config.legs.glowAnimation = GlowAnimation.BREATHE;
+			config.head.trimGlowAmount = 1.0F;
+			config.head.glowAnimation = GlowAnimation.FLICKER;
+		});
+		singleplayer.getServer().runCommand("time set midnight");
+		context.waitTicks(10);
+		VanityRenderData first = renderData(context);
+		context.takeScreenshot("31a_rainbow_design_and_glow_night");
+		context.waitTicks(16);
+		VanityRenderData second = renderData(context);
+		context.takeScreenshot("31b_rainbow_design_and_glow_later");
+
+		int chest = CosmeticSlot.CHEST.ordinal();
+		int legs = CosmeticSlot.LEGS.ordinal();
+		check(first.designs[chest].length == 1 && second.designs[chest].length == 1, "Chest should have its design layer");
+		check(first.designs[chest][0].color != second.designs[chest][0].color, "Rainbow design color should move, stayed #" + Integer.toHexString(first.designs[chest][0].color));
+		check(first.glowTint[chest] >= 0 && first.glowTint[chest] != second.glowTint[chest], "Rainbow glow should be tinted with a moving color");
+		check(Math.abs(first.glow[legs] - second.glow[legs]) > 0.01F, "Breathing glow should change strength: " + first.glow[legs] + " vs " + second.glow[legs]);
+		check(first.glowTint[legs] == -1, "Breathing glow keeps the armor's colors");
+
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.STYLE));
+		context.waitTicks(10);
+		context.takeScreenshot("31c_wardrobe_glow_animation");
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.DESIGN));
+		context.waitTicks(10);
+		context.takeScreenshot("31d_wardrobe_design_colors");
+		context.setScreen(() -> null);
+
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			config.chest.resetDesign();
+			config.chest.glow = 0.0F;
+			config.legs.glow = 0.0F;
+			config.head.trimGlowAmount = 0.0F;
+		});
+		singleplayer.getServer().runCommand("time set noon");
+	}
+
+	/** A copy of the player's Vanity render data for this frame. */
+	private static VanityRenderData renderData(ClientGameTestContext context) {
+		return context.computeOnClient(client -> {
+			AvatarRenderState state = (AvatarRenderState) client.getEntityRenderDispatcher().getRenderer(client.player).createRenderState(client.player, 1.0F);
+			VanityRenderData data = state.getData(VanityClient.RENDER_DATA);
+			check(data != null, "Player should have Vanity render data");
+			VanityRenderData copy = new VanityRenderData();
+
+			for (int i = 0; i < copy.glow.length; i++) {
+				copy.designs[i] = new TrimLayer[data.designs[i].length];
+				for (int k = 0; k < data.designs[i].length; k++) copy.designs[i][k] = data.designs[i][k].copy();
+				copy.glow[i] = data.glow[i];
+				copy.trimGlow[i] = data.trimGlow[i];
+				copy.glowTint[i] = data.glowTint[i];
+			}
+
+			return copy;
+		});
+	}
+
+	/** Held-item skins: a diamond sword shown as netherite, and a SkyBlock "Hyperion" (by its id) shown as a gold sword. */
+	private static void testItemSkins(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		context.runOnClient(client -> VanityClient.config().itemSkins.clear());
+		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:diamond_sword");
+		singleplayer.getServer().runCommand("item replace entity @p weapon.offhand with minecraft:netherite_sword");
+		context.waitTicks(5);
+
+		// Hand tab: New from held, then the off-hand netherite sword as the look
+		context.setScreen(VanityScreen::hand);
+		context.waitTicks(5);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("New from held"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Off"));
+		context.waitTicks(3);
+		context.takeScreenshot("32a_wardrobe_hand_skins");
+		context.setScreen(() -> null);
+		singleplayer.getServer().runCommand("item replace entity @p weapon.offhand with minecraft:air");
+		context.waitTicks(3);
+
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			check(config.itemSkins.size() == 1, "One item skin should be made, got " + config.itemSkins.size());
+			ItemSkin skin = config.itemSkins.get(0);
+			check(skin.item.equals("minecraft:diamond_sword") && skin.skyblockId.isEmpty(), "Skin should match diamond swords, got " + skin.item + " " + skin.skyblockId);
+			check(skin.look().is(Items.NETHERITE_SWORD), "Skin look should be the off-hand netherite sword, got " + skin.look());
+			check(ItemSkins.skinned(client.player.getMainHandItem()).is(Items.NETHERITE_SWORD), "Held diamond sword should be drawn as netherite");
+			check(ItemSkins.skinned(new ItemStack(Items.IRON_SWORD)).is(Items.IRON_SWORD), "Other items keep their look");
+			if (client.gui.hud.isHidden()) client.gui.hud.toggle();
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("32b_sword_skin_third_person");
+		setCamera(context, CameraType.FIRST_PERSON);
+		context.waitTicks(10);
+		context.takeScreenshot("32c_sword_skin_first_person");
+		setCamera(context, CameraType.THIRD_PERSON_FRONT);
+
+		// SkyBlock item: matched by its SkyBlock id, not just its type
+		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:iron_sword[minecraft:custom_data={id:\"HYPERION\"},minecraft:custom_name=\"Hyperion\"]");
+		context.waitTicks(5);
+		context.setScreen(VanityScreen::hand);
+		context.waitTicks(5);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("New from held"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Look item ID"));
+		context.getInput().typeChars("golden_sword");
+		context.waitTicks(3);
+		context.takeScreenshot("32d_wardrobe_skyblock_skin");
+		context.setScreen(() -> null);
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			check(config.itemSkins.size() == 2, "A second skin should be made for the Hyperion, got " + config.itemSkins.size());
+			ItemSkin skin = config.itemSkins.get(1);
+			check(skin.skyblockId.equals("HYPERION"), "Skin should match the SkyBlock id HYPERION, got '" + skin.skyblockId + "'");
+			check(skin.look().is(Items.GOLDEN_SWORD), "Typed look should be a golden sword, got " + skin.lookItem);
+			check(ItemSkins.skinned(client.player.getMainHandItem()).is(Items.GOLDEN_SWORD), "Hyperion should be drawn as a golden sword");
+			check(ItemSkins.skinned(new ItemStack(Items.IRON_SWORD)).is(Items.IRON_SWORD), "A plain iron sword (no SkyBlock id) must not get the Hyperion skin");
+		});
+		context.takeScreenshot("32e_skyblock_item_skin");
+		cleanView(context);
+	}
+
+	/** Auto-wear an outfit in this world: switching away and "joining" again puts it back on. */
+	private static void testAutoOutfit(ClientGameTestContext context) {
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			check(config.outfits.size() >= 2, "Outfits from the earlier test should still be saved");
+			config.wearOutfit(0);
+		});
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.HEAD, VanityScreen.Page.OUTFITS));
+		context.waitTicks(5);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Auto-wear"));
+		context.waitTicks(3);
+		context.takeScreenshot("33a_wardrobe_auto_wear");
+		context.setScreen(() -> null);
+
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			String key = AutoOutfits.currentKey(client);
+			check(key != null && key.startsWith("world:"), "Singleplayer key should be the world, got " + key);
+			check(config.outfits.get(0).servers.contains(key), "First outfit should be set to auto-wear in this world");
+			check(config.outfitFor(key) == config.outfits.get(0), "This world should map to the first outfit");
+
+			config.wearOutfit(1);
+			check(config.chest.item.equals("minecraft:netherite_chestplate"), "Switched to the netherite outfit");
+			AutoOutfits.onJoin(client);
+			check(config.outfit == 0 && config.chest.item.equals("minecraft:leather_chestplate"), "Joining should put the auto outfit back on, got " + config.chest.item);
+			if (client.gui.hud.isHidden()) client.gui.hud.toggle();
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("33b_auto_outfit_on_join");
+		cleanView(context);
 	}
 
 	private static final String PACK = "vanity_test_pack";

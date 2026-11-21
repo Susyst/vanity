@@ -32,18 +32,22 @@ public final class SlotSettings {
 	public String trimMaterial = "minecraft:gold";
 	/** Custom trim design: up to three trim patterns in any color, drawn on top of the armor. */
 	public TrimLayer[] design = newDesign();
+	/** How the design colors move: solid, rainbow, pulse or shimmer. */
+	public DyeAnimation designAnimation = DyeAnimation.SOLID;
 	/** Recolor dyeable looks (leather) with {@link #dyeColor}. */
 	public boolean customDye;
 	/** RGB dye color, default is undyed leather. */
 	public int dyeColor = 0xA06540;
 	/** How the dye color moves: solid, rainbow, pulse or shimmer. */
 	public DyeAnimation dyeAnimation = DyeAnimation.SOLID;
-	/** Speed of {@link #dyeAnimation}, 0.25 to 4. */
+	/** Speed of this piece's dye, design and glow animations, 0.25 to 4. */
 	public float dyeSpeed = 1.0F;
 	/** Armor opacity, 0.1 (ghostly) to 1 (solid). */
 	public float opacity = 1.0F;
 	/** How much the armor glows in the dark, 0 to 1. */
 	public float glow;
+	/** How the glow (armor and trim) moves: steady, breathe, rainbow or flicker. */
+	public GlowAnimation glowAnimation = GlowAnimation.STEADY;
 	/** Old 0.9 on/off setting, read once and turned into {@link #trimGlowAmount}. */
 	public Boolean trimGlow;
 	/** How much trims and custom designs glow, 0 to 1. Kept soft: even 1 is a gentle glow. */
@@ -152,6 +156,7 @@ public final class SlotSettings {
 		this.dyeSpeed = 1.0F;
 		this.opacity = 1.0F;
 		this.glow = 0.0F;
+		this.glowAnimation = GlowAnimation.STEADY;
 		this.trimGlowAmount = 0.0F;
 	}
 
@@ -168,6 +173,7 @@ public final class SlotSettings {
 
 	public void resetDesign() {
 		this.design = newDesign();
+		this.designAnimation = DyeAnimation.SOLID;
 	}
 
 	/** Resets glint, dye, trim and design. */
@@ -185,6 +191,7 @@ public final class SlotSettings {
 		this.dyeSpeed = other.dyeSpeed;
 		this.opacity = other.opacity;
 		this.glow = other.glow;
+		this.glowAnimation = other.glowAnimation;
 		this.trimGlowAmount = other.trimGlowAmount;
 	}
 
@@ -196,6 +203,7 @@ public final class SlotSettings {
 
 	public void copyDesignFrom(SlotSettings other) {
 		for (int i = 0; i < DESIGN_LAYERS; i++) this.design[i] = other.design[i].copy();
+		this.designAnimation = other.designAnimation;
 	}
 
 	public void resetTransform() {
@@ -227,6 +235,7 @@ public final class SlotSettings {
 		copy.dyeSpeed = this.dyeSpeed;
 		copy.opacity = this.opacity;
 		copy.glow = this.glow;
+		copy.glowAnimation = this.glowAnimation;
 		copy.trimGlowAmount = this.trimGlowAmount;
 		copy.rune = this.rune.copy();
 		copy.mode = this.mode;
@@ -267,6 +276,8 @@ public final class SlotSettings {
 		}
 		this.dyeColor &= 0xFFFFFF;
 		if (this.dyeAnimation == null) this.dyeAnimation = DyeAnimation.SOLID;
+		if (this.designAnimation == null) this.designAnimation = DyeAnimation.SOLID;
+		if (this.glowAnimation == null) this.glowAnimation = GlowAnimation.STEADY;
 		if (!Float.isFinite(this.dyeSpeed)) this.dyeSpeed = 1.0F;
 		this.dyeSpeed = Math.max(0.25F, Math.min(4.0F, this.dyeSpeed));
 		if (!Float.isFinite(this.opacity)) this.opacity = 1.0F;

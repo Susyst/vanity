@@ -27,6 +27,7 @@ import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
 
@@ -37,7 +38,10 @@ import dev.susyst.vanity.config.GlintMode;
 import dev.susyst.vanity.config.Rune;
 import dev.susyst.vanity.config.RuneEffect;
 import dev.susyst.vanity.config.RuneShape;
+import dev.susyst.vanity.AutoOutfits;
 import dev.susyst.vanity.config.DyeAnimation;
+import dev.susyst.vanity.config.GlowAnimation;
+import dev.susyst.vanity.config.ItemSkin;
 import dev.susyst.vanity.config.Outfit;
 import dev.susyst.vanity.config.RuneReaction;
 import dev.susyst.vanity.config.SlotSettings;
@@ -45,6 +49,7 @@ import dev.susyst.vanity.config.TrimLayer;
 import dev.susyst.vanity.config.TrimMode;
 import dev.susyst.vanity.config.Trims;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.render.VanityCosmetics;
 
 /**
@@ -69,12 +74,18 @@ public final class VanityScreen extends Screen {
 		TRIM("Trim"),
 		DESIGN("Design"),
 		RUNE("Rune"),
-		OUTFITS("Outfits");
+		OUTFITS("Outfits"),
+		/** Held-item skins; opened with the Hand tab, not a page tab. */
+		HAND("Hand");
 
 		final String label;
 
 		Page(String label) {
 			this.label = label;
+		}
+
+		boolean hasTab() {
+			return this != HAND;
 		}
 	}
 
@@ -97,9 +108,13 @@ public final class VanityScreen extends Screen {
 	private float previewYaw;
 	private Menu menu;
 	private int menuScroll;
+	/** The page to go back to when leaving the Hand tab. */
+	private Page lastPage = Page.LOOK;
+	private int skinIndex;
 
 	private final List<GlassButton> slotTabs = new ArrayList<>();
 	private GlassButton allTab;
+	private GlassButton handTab;
 	private final Map<Page, GlassButton> pageTabs = new EnumMap<>(Page.class);
 	private final Map<Page, List<AbstractWidget>> pageWidgets = new EnumMap<>(Page.class);
 	/** Widgets only shown when editing one slot. */
@@ -109,6 +124,7 @@ public final class VanityScreen extends Screen {
 
 	private EditBox itemBox;
 	private EditBox outfitNameBox;
+	private EditBox skinLookBox;
 	private boolean syncing;
 	private boolean initialized;
 	private int previewRight;
@@ -129,6 +145,12 @@ public final class VanityScreen extends Screen {
 		super(Component.translatable("screen.vanity.title"));
 		this.selected = slot;
 		this.page = page;
+	}
+
+	/** Opens the wardrobe on the Hand tab (held-item skins). */
+	public static VanityScreen hand() {
+		VanityScreen screen = new VanityScreen(CosmeticSlot.HEAD, Page.HAND);
+		return screen;
 	}
 
 	/** Opens the wardrobe editing all four slots at once. */
@@ -153,6 +175,14 @@ public final class VanityScreen extends Screen {
 
 	private Rune rune() {
 		return this.current().rune;
+	}
+
+	/** The held-item skin picked on the Hand tab, or null. */
+	private ItemSkin skin() {
+		List<ItemSkin> skins = config().itemSkins;
+		if (skins.isEmpty()) return null;
+		this.skinIndex = Math.max(0, Math.min(this.skinIndex, skins.size() - 1));
+		return skins.get(this.skinIndex);
 	}
 
 	private static Tooltip tip(String text) {
@@ -187,7 +217,7 @@ public final class VanityScreen extends Screen {
 				case TRIM -> target.copyTrimFrom(source);
 				case DESIGN -> target.copyDesignFrom(source);
 				case RUNE -> target.rune = source.rune.copy();
-				case OUTFITS -> {
+				case OUTFITS, HAND -> {
 				}
 			}
 		}
@@ -314,7 +344,7 @@ public final class VanityScreen extends Screen {
 		void set(SlotSettings settings, float value);
 	}
 
-	private void slider(Page page, int x, int y, int w, String label, double min, double max, double step, String format, FloatGetter get, FloatSetter set) {
+	private ValueSlider slider(Page page, int x, int y, int w, String label, double min, double max, double step, String format, FloatGetter get, FloatSetter set) {
 		ValueSlider slider = this.on(page, new ValueSlider(x, y, w, ROW, label, min, max, step, format, 0, v -> {
 			if (this.syncing) return;
 			set.set(this.current(), (float) v);
@@ -322,11 +352,16 @@ public final class VanityScreen extends Screen {
 			this.refresh();
 		}));
 		this.sync(() -> slider.setRealValue(get.get(this.current())));
+		return slider;
 	}
 
 	/** "Copy to the other three slots", shown only when editing one slot. */
 	private void copyToAllButton(Page page, int x, int y, int w, String what, Consumer<SlotSettings> copy) {
-		GlassButton button = this.button(page, x, y, w, "All slots", () -> this.applyToAll(copy));
+		this.copyToAllButton(page, x, y, w, "All slots", what, copy);
+	}
+
+	private void copyToAllButton(Page page, int x, int y, int w, String label, String what, Consumer<SlotSettings> copy) {
+		GlassButton button = this.button(page, x, y, w, label, () -> this.applyToAll(copy));
 		button.setTooltip(tip("Copy this slot's " + what + " to the other three slots"));
 		this.singleSlotWidgets.add(button);
 	}
@@ -374,6 +409,18 @@ public final class VanityScreen extends Screen {
 
 		for (DyeAnimation animation : DyeAnimation.values()) {
 			options.add(animation == DyeAnimation.SOLID ? new Option(animation.label, this.current().dyeColor) : Option.of(animation.label));
+		}
+
+		return options;
+	}
+
+	private List<Option> skinOptions() {
+		List<Option> options = new ArrayList<>();
+		if (config().itemSkins.isEmpty()) options.add(Option.of("None yet"));
+
+		for (ItemSkin skin : config().itemSkins) {
+			String look = skin.look().isEmpty() ? "?" : skin.look().getHoverName().getString();
+			options.add(Option.of(skin.name + " → " + look));
 		}
 
 		return options;
@@ -427,8 +474,9 @@ public final class VanityScreen extends Screen {
 		// Slot tabs: All, Head, Chest, Legs, Feet
 		int y = 32;
 		CosmeticSlot[] slots = CosmeticSlot.values();
-		int tabW = (this.panelW - 2 * slots.length) / (slots.length + 1);
+		int tabW = (this.panelW - 2 * (slots.length + 1)) / (slots.length + 2);
 		this.allTab = this.button(null, this.panelX, y, tabW, "All", GlassButton.Style.SEGMENT, () -> {
+			this.leaveHand();
 			this.all = true;
 			this.syncItemBox();
 		});
@@ -439,9 +487,16 @@ public final class VanityScreen extends Screen {
 			this.slotTabs.add(this.button(null, this.panelX + (i + 1) * (tabW + 2), y, tabW, slot.label, GlassButton.Style.SEGMENT, () -> this.select(slot)));
 		}
 
+		this.handTab = this.button(null, this.panelX + (slots.length + 1) * (tabW + 2), y, this.panelX + this.panelW - (this.panelX + (slots.length + 1) * (tabW + 2)), "Hand", GlassButton.Style.SEGMENT, () -> {
+			if (this.page != Page.HAND) this.lastPage = this.page;
+			this.page = Page.HAND;
+			this.all = false;
+		});
+		this.handTab.setTooltip(tip("Item skins: make the items you hold look like other items"));
+
 		// Page tabs
 		y += step;
-		Page[] pages = Page.values();
+		Page[] pages = java.util.Arrays.stream(Page.values()).filter(Page::hasTab).toArray(Page[]::new);
 		int pageW = this.panelW / pages.length;
 
 		for (int i = 0; i < pages.length; i++) {
@@ -455,7 +510,7 @@ public final class VanityScreen extends Screen {
 		int r2 = r1 + step;
 		int r3 = r2 + step;
 		int r4 = r3 + step;
-		for (Page p : pages) this.hintY.put(p, r4 + step + 2);
+		for (Page p : Page.values()) this.hintY.put(p, r4 + step + 2);
 		this.hintY.put(Page.TRIM, r4 + 2);
 
 		// ---- Look ----
@@ -506,7 +561,7 @@ public final class VanityScreen extends Screen {
 			this.current().customDye = index > 0;
 			if (index > 0) this.current().dyeAnimation = DyeAnimation.values()[index - 1];
 		}).setTooltip(tip("Recolor leather looks. Solid: the color below. Rainbow cycles every color; Pulse and Shimmer animate the color below."));
-		this.slider(Page.STYLE, x3, r0, thirdW, "Speed", 0.25, 4.0, 0.25, "%.2fx", s -> s.dyeSpeed, (s, v) -> s.dyeSpeed = v);
+		this.slider(Page.STYLE, x3, r0, thirdW, "Speed", 0.25, 4.0, 0.25, "%.2fx", s -> s.dyeSpeed, (s, v) -> s.dyeSpeed = v).setTooltip(tip("Speed of this piece's dye, design color and glow animations"));
 
 		IntConsumer setDye = color -> {
 			this.current().dyeColor = color;
@@ -517,8 +572,12 @@ public final class VanityScreen extends Screen {
 		this.colorRow(Page.STYLE, r1, () -> this.current().customDye ? this.current().dyeColor : -1, setDye);
 		this.colorSliders(Page.STYLE, r2, thirdW, () -> this.current().dyeColor, setDye);
 		this.hexBox(Page.STYLE, this.panelX, r3, thirdW, () -> this.current().dyeColor, setDye);
-		this.button(Page.STYLE, x2, r3, thirdW, "Reset", () -> this.current().resetStyle());
-		this.copyToAllButton(Page.STYLE, x3, r3, thirdW, "glint, dye, opacity and glow", s -> s.copyStyleFrom(this.current()));
+		this.dropdown(Page.STYLE, x2, r3, thirdW, "", () -> enumOptions(GlowAnimation.values(), g -> g.label), () -> this.current().glowAnimation.ordinal(),
+				index -> this.current().glowAnimation = GlowAnimation.values()[index])
+				.setTooltip(tip("How Glow and Trim glow move. Breathe fades up and down, Rainbow glows in shifting colors, Flicker is like a torch. Works on any armor."));
+		int sixthW = (thirdW - GAP) / 2;
+		this.button(Page.STYLE, x3, r3, sixthW, "Reset", () -> this.current().resetStyle());
+		this.copyToAllButton(Page.STYLE, x3 + sixthW + GAP, r3, thirdW - sixthW - GAP, "To all", "glint, dye, opacity and glow", s -> s.copyStyleFrom(this.current()));
 
 		this.slider(Page.STYLE, this.panelX, r4, thirdW, "Opacity", 10, 100, 5, "%.0f%%", s -> s.opacity * 100.0F, (s, v) -> s.opacity = v / 100.0F);
 		this.slider(Page.STYLE, x2, r4, thirdW, "Glow", 0, 100, 5, "%.0f%%", s -> s.glow * 100.0F, (s, v) -> s.glow = v / 100.0F);
@@ -558,10 +617,13 @@ public final class VanityScreen extends Screen {
 		layerOn.setTooltip(tip("Show or hide this layer"));
 		this.sync(() -> layerOn.setMessage(Component.literal(this.layer().enabled ? "Shown" : "Hidden")));
 
-		this.dropdown(Page.DESIGN, this.panelX, r1, this.panelW, "Pattern", VanityScreen::patternOptions, () -> patternIndex(this.layer().pattern), index -> {
+		this.dropdown(Page.DESIGN, this.panelX, r1, halfW, "Pattern", VanityScreen::patternOptions, () -> patternIndex(this.layer().pattern), index -> {
 			this.layer().pattern = Trims.id(Trims.PATTERNS.get(index));
 			this.layer().enabled = true;
 		});
+		this.dropdown(Page.DESIGN, this.panelX + halfW + GAP, r1, halfW, "Colors", () -> enumOptions(DyeAnimation.values(), d -> d.label), () -> this.current().designAnimation.ordinal(),
+				index -> this.current().designAnimation = DyeAnimation.values()[index])
+				.setTooltip(tip("Animate the design's colors on any armor: Rainbow cycles every color, Pulse and Shimmer move each layer's color. Speed is on the Style page."));
 
 		IntConsumer setLayerColor = color -> {
 			this.layer().color = color;
@@ -665,7 +727,69 @@ public final class VanityScreen extends Screen {
 			config().wearNextOutfit(1);
 			this.syncItemBox();
 		});
-		this.hintY.put(Page.OUTFITS, r4 + 2);
+		GlassButton auto = this.button(Page.OUTFITS, this.panelX, r4, this.panelW, "", () ->
+				config().toggleAutoOutfit(config().currentOutfit(), AutoOutfits.currentKey(this.minecraft)));
+		this.sync(() -> {
+			Outfit outfit = config().currentOutfit();
+			String key = AutoOutfits.currentKey(this.minecraft);
+			auto.active = outfit != null && key != null;
+			auto.setMessage(Component.literal("Auto-wear on " + AutoOutfits.describe(key) + ": " + onOff(outfit != null && outfit.servers.contains(key))));
+			auto.setTooltip(tip("Put this outfit on automatically every time you join " + AutoOutfits.describe(key)));
+		});
+
+		// ---- Hand (held-item skins) ----
+		this.dropdown(Page.HAND, this.panelX, r0, this.panelW, "Skin", "None yet", this::skinOptions, () -> config().itemSkins.isEmpty() ? 0 : this.skinIndex,
+				index -> this.skinIndex = index).setTooltip(tip("Your item skins: pick one to edit it"));
+
+		GlassButton newSkin = this.button(Page.HAND, this.panelX, r1, halfW, "New from held", this::newSkinFromHeld);
+		newSkin.setTooltip(tip("Make a skin for the item in your main hand. SkyBlock items match by their SkyBlock id, others by item type."));
+		GlassButton deleteSkin = this.button(Page.HAND, this.panelX + halfW + GAP, r1, halfW, "Delete", () -> {
+			if (this.skin() != null) config().itemSkins.remove(this.skinIndex);
+		});
+		this.sync(() -> deleteSkin.active = this.skin() != null);
+
+		this.skinLookBox = this.on(Page.HAND, new GlassEditBox(this.font, this.panelX, r2, boxW, ROW, Component.literal("Look item ID")));
+		this.skinLookBox.setMaxLength(128);
+		this.skinLookBox.setHint(Component.literal("netherite_sword"));
+		this.skinLookBox.setResponder(value -> {
+			if (this.syncing || this.skin() == null) return;
+			this.skin().setLook(value.trim());
+			this.refresh();
+		});
+		this.sync(() -> {
+			ItemSkin skin = this.skin();
+			this.skinLookBox.active = skin != null;
+			if (!this.skinLookBox.isFocused()) {
+				this.skinLookBox.setValue(skin != null ? skin.lookItem : "");
+				this.skinLookBox.moveCursorToStart(false);
+			}
+		});
+
+		GlassButton skinHeld = this.button(Page.HAND, this.panelX + boxW + GAP, r2, smallW, "Held", () -> this.setSkinLook(InteractionHand.MAIN_HAND));
+		skinHeld.setTooltip(tip("Use the exact item in your main hand as the look (keeps its name, skin and SkyBlock data)"));
+		GlassButton skinOff = this.button(Page.HAND, this.panelX + boxW + GAP + (smallW + GAP), r2, smallW, "Off", () -> this.setSkinLook(InteractionHand.OFF_HAND));
+		skinOff.setTooltip(tip("Use the exact item in your off hand as the look"));
+		GlassButton skinClear = this.button(Page.HAND, this.panelX + boxW + GAP + 2 * (smallW + GAP), r2, smallW, "Clear", () -> {
+			if (this.skin() != null) this.skin().setLook("");
+		});
+		skinClear.setTooltip(tip("No look: the item looks normal again"));
+		this.sync(() -> {
+			boolean has = this.skin() != null;
+			skinHeld.active = has;
+			skinOff.active = has;
+			skinClear.active = has;
+		});
+
+		this.dropdown(Page.HAND, this.panelX, r3, halfW, "Glint", () -> enumOptions(GlintMode.values(), g -> g.label), () -> this.skin() != null ? this.skin().glint.ordinal() : 0, index -> {
+			if (this.skin() != null) this.skin().glint = GlintMode.values()[index];
+		}).setTooltip(tip("Enchantment shine. Real: shine if the item you're holding is enchanted."));
+		GlassButton skinOn = this.button(Page.HAND, this.panelX + halfW + GAP, r3, halfW, "", () -> {
+			if (this.skin() != null) this.skin().enabled = !this.skin().enabled;
+		});
+		this.sync(() -> {
+			skinOn.active = this.skin() != null;
+			skinOn.setMessage(Component.literal("Skin: " + onOff(this.skin() == null || this.skin().enabled)));
+		});
 
 		// ---- Bottom row ----
 		int bottomY = this.height - 36;
@@ -693,9 +817,39 @@ public final class VanityScreen extends Screen {
 	// ---- actions ----
 
 	private void select(CosmeticSlot slot) {
+		this.leaveHand();
 		this.all = false;
 		this.selected = slot;
 		this.syncItemBox();
+	}
+
+	private void leaveHand() {
+		if (this.page == Page.HAND) this.page = this.lastPage;
+	}
+
+	private void newSkinFromHeld() {
+		LocalPlayer player = this.minecraft.player;
+		if (player == null || player.getMainHandItem().isEmpty()) return;
+		ItemSkin created = ItemSkins.create(player.getMainHandItem());
+
+		// Already have a skin for this item: edit that one
+		for (int i = 0; i < config().itemSkins.size(); i++) {
+			ItemSkin skin = config().itemSkins.get(i);
+			if (skin.item.equals(created.item) && skin.skyblockId.equals(created.skyblockId)) {
+				this.skinIndex = i;
+				return;
+			}
+		}
+
+		config().itemSkins.add(created);
+		this.skinIndex = config().itemSkins.size() - 1;
+	}
+
+	private void setSkinLook(InteractionHand hand) {
+		LocalPlayer player = this.minecraft.player;
+		ItemSkin skin = this.skin();
+		if (player == null || skin == null) return;
+		skin.setLook(player.getItemInHand(hand), player.registryAccess());
 	}
 
 	private void useHeldItem() {
@@ -726,14 +880,17 @@ public final class VanityScreen extends Screen {
 		this.syncing = true;
 
 		CosmeticSlot[] slots = CosmeticSlot.values();
-		this.allTab.selected = this.all;
+		boolean hand = this.page == Page.HAND;
+		this.allTab.selected = this.all && !hand;
+		this.handTab.selected = hand;
 
 		for (int i = 0; i < this.slotTabs.size(); i++) {
-			this.slotTabs.get(i).selected = !this.all && slots[i] == this.selected;
+			this.slotTabs.get(i).selected = !this.all && !hand && slots[i] == this.selected;
 		}
 
 		for (Map.Entry<Page, GlassButton> entry : this.pageTabs.entrySet()) {
 			entry.getValue().selected = entry.getKey() == this.page;
+			entry.getValue().visible = !hand;
 		}
 
 		for (Map.Entry<Page, List<AbstractWidget>> entry : this.pageWidgets.entrySet()) {
@@ -938,6 +1095,7 @@ public final class VanityScreen extends Screen {
 			case DESIGN -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Up to 3 patterns in any color, over your armor.");
 			case RUNE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Particles only you see. Press F5 to look at them.");
 			case OUTFITS -> this.hint(graphics, "Press " + VanityClient.nextOutfitKeyName() + " in game to switch outfits.");
+			case HAND -> this.handStatus(graphics);
 		}
 
 		LocalPlayer player = this.minecraft.player;
@@ -959,6 +1117,26 @@ public final class VanityScreen extends Screen {
 			graphics.text(this.font, line, this.panelX, y, GRAY);
 			y += this.font.lineHeight + 1;
 		}
+	}
+
+	/** Hand tab: a title where the page tabs are, what the picked skin does, and how to make one. */
+	private void handStatus(GuiGraphicsExtractor graphics) {
+		graphics.text(this.font, Component.literal("Item skins").withStyle(ChatFormatting.BOLD), this.panelX, this.contentY - 24, Glass.TEXT);
+		ItemSkin skin = this.skin();
+		int y = this.contentY + 4 * (ROW + GAP) + 6;
+
+		if (skin == null) {
+			this.hint(graphics, "Hold an item and press New from held. Then type a look id, or hold the look item and press Held.");
+			return;
+		}
+
+		String target = skin.name + (skin.skyblockId.isEmpty() ? "" : " (" + skin.skyblockId + ")");
+		ItemStack look = skin.look();
+		Component text = look.isEmpty()
+				? Component.literal(target + ": pick a look")
+				: Component.literal(target + " looks like ").append(look.getHoverName());
+		graphics.text(this.font, text, this.panelX, y, look.isEmpty() ? GRAY : GREEN);
+		this.hint(graphics, "Works in first and third person, the hotbar and your inventory.");
 	}
 
 	private void lookStatus(GuiGraphicsExtractor graphics, SlotSettings s) {
