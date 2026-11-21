@@ -68,6 +68,8 @@ Get the jar from [Releases](https://github.com/Susyst/vanity/releases).
 
 Requires Java 25. `./gradlew build` produces `build/libs/vanity-<version>.jar`.
 GitHub Actions builds every push and also pushes the jar and log to the `build-output` branch.
+When `main` gets a new `mod_version` with a `changelog/<version>.md`, and both the build and the in-game test pass, it
+publishes a GitHub release with that jar on its own.
 
 `./gradlew runClientGameTest` starts a real client (Fabric client game test), equips glass, solid blocks, a pumpkin
 and a sword as cosmetics, and takes screenshots into `build/run/clientGameTest/screenshots`. CI runs it in a virtual

@@ -1,6 +1,6 @@
-# Publishes a GitHub release with the jar for the version in gradle.properties.
-# Run it from Actions -> release -> Run workflow (it creates the v<version> tag), or push a v<version> tag.
-# Release notes come from changelog/<version>.md.
+# Manual fallback. Releases normally happen on their own: the build workflow publishes one when main gets a new
+# mod_version and its build and in-game test pass. This publishes the version in gradle.properties by hand
+# (Actions -> release -> Run workflow). Release notes come from changelog/<version>.md.
 name: release
 
 on:

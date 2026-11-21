@@ -145,3 +145,50 @@ jobs:
       - name: fail if the test failed
         if: steps.test.outcome != 'success'
         run: exit 1
+
+  # When main gets a version (mod_version in gradle.properties) that has no release yet, and both the build and
+  # the in-game test passed, publish a GitHub release with the tested jar and changelog/<version>.md as notes.
+  release:
+    needs: [build, client_test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+
+      - name: check for a new version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$version is already released, nothing to do"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          elif [ ! -f "changelog/$version.md" ]; then
+            echo "::warning::No changelog/$version.md, so v$version is not released"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: download the tested jar
+        if: steps.version.outputs.new == 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: vanity-jar
+          path: jars
+
+      - name: publish release
+        if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" "jars/vanity-$VERSION.jar" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Vanity $VERSION for Minecraft 26.3" \
+            --notes-file "changelog/$VERSION.md" \
+            --latest
