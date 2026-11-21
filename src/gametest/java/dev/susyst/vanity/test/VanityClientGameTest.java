@@ -10,6 +10,15 @@ import java.util.concurrent.CompletableFuture;
 
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.DyedItemColor;
+import net.minecraft.world.item.component.ResolvableProfile;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 
@@ -120,7 +129,88 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			enableTestTexturePack(context);
 			context.waitTicks(10);
 			context.takeScreenshot("08b_gold_look_with_texture_pack");
+
+			testSkyBlockLooks(context, singleplayer);
 		}
+	}
+
+	private static final int NECRON_RED = 0xE7413C;
+
+	/** A SkyBlock-style armor piece: dyed leather with a custom name and a SkyBlock item id. */
+	private static ItemStack skyBlockPiece(ItemStack base, int color, String name, String id) {
+		base.set(DataComponents.DYED_COLOR, new DyedItemColor(color));
+		base.set(DataComponents.CUSTOM_NAME, Component.literal(name));
+		CompoundTag tag = new CompoundTag();
+		tag.putString("id", id);
+		base.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+		return base;
+	}
+
+	/**
+	 * Wears SkyBlock-style armor, saves its look with "Worn", then switches to diamond: the SkyBlock look must stay,
+	 * keep its name, dye and SkyBlock id, and survive saving and reloading the config.
+	 */
+	private static void testSkyBlockLooks(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		clearCosmetics(context);
+		ItemStack chest = skyBlockPiece(new ItemStack(Items.LEATHER_CHESTPLATE), NECRON_RED, "Necron's Chestplate", "NECRON_CHESTPLATE");
+		ItemStack legs = skyBlockPiece(new ItemStack(Items.LEATHER_LEGGINGS), 0x1793C4, "Storm's Leggings", "WISE_WITHER_LEGGINGS");
+		singleplayer.getServer().runOnServer(server -> {
+			singleplayer.getConnection().getServerPlayer().setItemSlot(EquipmentSlot.CHEST, chest.copy());
+			singleplayer.getConnection().getServerPlayer().setItemSlot(EquipmentSlot.LEGS, legs.copy());
+		});
+		context.waitFor(client -> client.player.getItemBySlot(EquipmentSlot.CHEST).getItem() == Items.LEATHER_CHESTPLATE
+				&& client.player.getItemBySlot(EquipmentSlot.LEGS).getItem() == Items.LEATHER_LEGGINGS);
+
+		// Same as pressing "Worn" on the Chest and Legs tabs
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			config.chest.setLook(client.player.getItemBySlot(EquipmentSlot.CHEST), client.player.registryAccess());
+			config.legs.setLook(client.player.getItemBySlot(EquipmentSlot.LEGS), client.player.registryAccess());
+			// A player-head helmet, like most SkyBlock helmets
+			ItemStack head = new ItemStack(Items.PLAYER_HEAD);
+			head.set(DataComponents.PROFILE, ResolvableProfile.createUnresolved("Notch"));
+			config.head.setLook(head, client.player.registryAccess());
+		});
+
+		// Now actually wear plain diamond
+		singleplayer.getServer().runOnServer(server -> {
+			singleplayer.getConnection().getServerPlayer().setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
+			singleplayer.getConnection().getServerPlayer().setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.DIAMOND_LEGGINGS));
+		});
+		context.waitFor(client -> client.player.getItemBySlot(EquipmentSlot.CHEST).getItem() == Items.DIAMOND_CHESTPLATE);
+		context.waitTicks(40); // let the head skin download
+		context.takeScreenshot("09_skyblock_looks_while_wearing_diamond");
+
+		context.runOnClient(client -> {
+			VanityClient.config().save();
+			VanityConfig reloaded = VanityConfig.load();
+			ItemStack saved = reloaded.chest.stack();
+
+			if (!saved.getHoverName().getString().equals("Necron's Chestplate")) {
+				throw new AssertionError("Saved look lost its name: " + saved.getHoverName().getString());
+			}
+
+			DyedItemColor color = saved.get(DataComponents.DYED_COLOR);
+
+			if (color == null || color.rgb() != NECRON_RED) {
+				throw new AssertionError("Saved look lost its dye color: " + color);
+			}
+
+			CustomData data = saved.get(DataComponents.CUSTOM_DATA);
+
+			if (data == null || !data.copyTag().getStringOr("id", "").equals("NECRON_CHESTPLATE")) {
+				throw new AssertionError("Saved look lost its SkyBlock id: " + data);
+			}
+
+			if (reloaded.head.stack().getItem() != Items.PLAYER_HEAD || reloaded.head.stack().get(DataComponents.PROFILE) == null) {
+				throw new AssertionError("Saved head look lost its skin profile");
+			}
+		});
+
+		context.setScreen(VanityScreen::new);
+		context.waitTicks(10);
+		context.takeScreenshot("10_wardrobe_skyblock_head");
+		context.setScreen(() -> null);
 	}
 
 	private static final String PACK = "vanity_test_pack";

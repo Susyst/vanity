@@ -8,7 +8,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.5.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.6.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. Click **Armor look** to change all four slots at once: Leather, Chainmail, Iron, Gold, Copper, Diamond,
    Netherite, then Off (your real armor).
@@ -16,6 +16,12 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
    press **Held**. **Clear** goes back to your real armor for that slot.
 
 Settings save to `config/vanity.json`. Only you see the cosmetics.
+
+### SkyBlock armor and other custom items
+
+**Held** and **Worn** save the exact item, not just its type: custom name, dye color, player-head skin and SkyBlock
+data all stay. Wear a SkyBlock piece, open its slot's tab and press **Worn**; you can then wear anything else and keep
+that look. Player-head helmets (most SkyBlock helmets) are drawn like a worn head, with their skin.
 
 ### Non-armor items
 

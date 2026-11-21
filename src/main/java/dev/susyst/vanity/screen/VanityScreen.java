@@ -14,7 +14,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
@@ -56,6 +55,8 @@ public final class VanityScreen extends Screen {
 	private ValueSlider rotZ;
 	private ValueSlider scale;
 
+	/** True while widgets are being updated from code, so the item box doesn't treat it as typing. */
+	private boolean syncing;
 	private int previewRight;
 	private int panelX;
 	private int panelW;
@@ -104,15 +105,17 @@ public final class VanityScreen extends Screen {
 
 		y += ROW + 8;
 
-		// Item id, "use held item", clear
-		int smallW = 40;
-		int boxW = this.panelW - 2 * (smallW + GAP);
+		// Item id, "use held item", "use worn item", clear
+		int smallW = 36;
+		int boxW = this.panelW - 3 * (smallW + GAP);
 		this.itemBox = new EditBox(this.font, this.panelX, y, boxW, ROW, Component.literal("Item ID"));
 		this.itemBox.setMaxLength(128);
 		this.itemBox.setHint(Component.literal("netherite_chestplate"));
 		this.itemBox.setValue(this.current().item);
 		this.itemBox.setResponder(value -> {
-			this.current().item = value.trim();
+			if (this.syncing) return;
+			// Typing an id switches the slot to a plain item.
+			this.current().setLook(value.trim());
 			if (this.scale != null) this.refresh();
 		});
 		this.addRenderableWidget(this.itemBox);
@@ -120,12 +123,20 @@ public final class VanityScreen extends Screen {
 		Button held = Button.builder(Component.literal("Held"), b -> this.useHeldItem())
 				.bounds(this.panelX + boxW + GAP, y, smallW, ROW)
 				.build();
-		held.setTooltip(Tooltip.create(Component.literal("Use the item in your main hand")));
+		held.setTooltip(Tooltip.create(Component.literal("Use the exact item in your main hand, including its name, dye color, head skin and SkyBlock data")));
 		this.addRenderableWidget(held);
 
-		Button clear = Button.builder(Component.literal("Clear"), b -> this.itemBox.setValue(""))
+		Button worn = Button.builder(Component.literal("Worn"), b -> this.useWornItem())
 				.bounds(this.panelX + boxW + GAP + smallW + GAP, y, smallW, ROW)
 				.build();
+		worn.setTooltip(Tooltip.create(Component.literal("Save the look of what you're wearing in this slot right now (e.g. a SkyBlock armor piece). Then you can wear something else and keep this look.")));
+		this.addRenderableWidget(worn);
+
+		Button clear = Button.builder(Component.literal("Clear"), b -> {
+			this.current().clearLook();
+			this.syncItemBox();
+			this.refresh();
+		}).bounds(this.panelX + boxW + GAP + 2 * (smallW + GAP), y, smallW, ROW).build();
 		this.addRenderableWidget(clear);
 
 		y += ROW + 2;
@@ -183,7 +194,7 @@ public final class VanityScreen extends Screen {
 
 	private void select(CosmeticSlot slot) {
 		this.selected = slot;
-		this.itemBox.setValue(this.current().item);
+		this.syncItemBox();
 		this.refresh();
 	}
 
@@ -200,18 +211,36 @@ public final class VanityScreen extends Screen {
 		}
 
 		for (CosmeticSlot slot : CosmeticSlot.values()) {
-			config().get(slot).item = next == null ? "" : next.itemId(slot);
+			config().get(slot).setLook(next == null ? "" : next.itemId(slot));
 		}
 
-		this.itemBox.setValue(this.current().item);
+		this.syncItemBox();
 		this.refresh();
 	}
 
 	private void useHeldItem() {
 		LocalPlayer player = this.minecraft.player;
 		if (player == null) return;
-		ItemStack held = player.getMainHandItem();
-		this.itemBox.setValue(held.isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(held.getItem()).toString());
+		this.useItem(player.getMainHandItem(), player);
+	}
+
+	private void useWornItem() {
+		LocalPlayer player = this.minecraft.player;
+		if (player == null) return;
+		this.useItem(player.getItemBySlot(this.selected.equipmentSlot), player);
+	}
+
+	private void useItem(ItemStack stack, LocalPlayer player) {
+		this.current().setLook(stack, player.registryAccess());
+		this.syncItemBox();
+		this.refresh();
+	}
+
+	/** Shows the selected slot's item id in the box without treating it as typing. */
+	private void syncItemBox() {
+		this.syncing = true;
+		this.itemBox.setValue(this.current().item);
+		this.syncing = false;
 	}
 
 	/** Syncs every widget with the selected slot's settings. */
@@ -228,7 +257,7 @@ public final class VanityScreen extends Screen {
 		this.setButton.setMessage(Component.literal("Armor look: " + setLabel));
 
 		// Real armor pieces use the vanilla armor model, so fitting and transforms don't apply to them.
-		boolean fitted = !VanityCosmetics.isArmorLook(this.selected, s.stack());
+		boolean fitted = !VanityCosmetics.usesVanillaLook(this.selected, s.stack());
 		this.modeButton.active = fitted;
 		this.hideButton.active = fitted;
 		this.offsetX.active = fitted;
@@ -272,7 +301,7 @@ public final class VanityScreen extends Screen {
 			graphics.text(this.font, Component.literal("Showing your real armor."), this.panelX, this.statusY, GRAY);
 		} else if (stack.isEmpty()) {
 			graphics.text(this.font, Component.literal("Unknown item id"), this.panelX, this.statusY, RED);
-		} else if (VanityCosmetics.isArmorLook(this.selected, stack)) {
+		} else if (VanityCosmetics.usesVanillaLook(this.selected, stack)) {
 			graphics.text(this.font, Component.literal("Looks like ").append(stack.getHoverName()), this.panelX, this.statusY, GREEN);
 		} else {
 			graphics.text(this.font, Component.literal(this.selected.label + ": ").append(stack.getHoverName()).append(" (fitted)"), this.panelX, this.statusY, GREEN);

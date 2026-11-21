@@ -6,10 +6,12 @@ import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.item.ItemModelResolver;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.equipment.trim.ArmorTrim;
+import net.minecraft.world.level.block.AbstractSkullBlock;
 
 import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.CosmeticSlot;
@@ -36,6 +38,18 @@ public final class VanityCosmetics {
 		return !stack.isEmpty() && HumanoidArmorLayer.shouldRender(stack, slot.equipmentSlot);
 	}
 
+	/** True if the item is a mob or player head (like most SkyBlock helmets) in the Head slot. */
+	public static boolean isWornHead(CosmeticSlot slot, ItemStack stack) {
+		return slot == CosmeticSlot.HEAD
+				&& stack.getItem() instanceof BlockItem blockItem
+				&& blockItem.getBlock() instanceof AbstractSkullBlock;
+	}
+
+	/** True if the item is drawn exactly the way the game draws it when worn, so fitting doesn't apply. */
+	public static boolean usesVanillaLook(CosmeticSlot slot, ItemStack stack) {
+		return isArmorLook(slot, stack) || isWornHead(slot, stack);
+	}
+
 	public static void extract(VanityRenderData data, AvatarRenderState state, LivingEntity entity, ItemModelResolver resolver) {
 		VanityConfig config = VanityClient.config();
 
@@ -47,6 +61,18 @@ public final class VanityCosmetics {
 			if (stack.isEmpty()) {
 				data.active[i] = false;
 				data.items[i].clear();
+				continue;
+			}
+
+			if (isWornHead(slot, stack) && stack.getItem() instanceof BlockItem blockItem
+					&& blockItem.getBlock() instanceof AbstractSkullBlock skull) {
+				// Player and mob heads: shown like a worn head, with the head's own skin.
+				data.active[i] = false;
+				data.items[i].clear();
+				state.headEquipment = ItemStack.EMPTY;
+				state.headItem.clear();
+				state.wornHeadType = skull.getType();
+				state.wornHeadProfile = stack.get(DataComponents.PROFILE);
 				continue;
 			}
 

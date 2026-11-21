@@ -29,7 +29,9 @@ public enum ArmorSet {
 			boolean all = true;
 
 			for (CosmeticSlot slot : CosmeticSlot.values()) {
-				if (!set.itemId(slot).equals(config.get(slot).item)) {
+				SlotSettings settings = config.get(slot);
+
+				if (settings.isExactItem() || !set.itemId(slot).equals(settings.item)) {
 					all = false;
 					break;
 				}
