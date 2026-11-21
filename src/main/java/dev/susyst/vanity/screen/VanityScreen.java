@@ -357,6 +357,14 @@ public final class VanityScreen extends Screen {
 		return options;
 	}
 
+	/** First option keeps each piece's own shape (halo on the head, orbit on the chest, ...). */
+	private List<Option> runeShapeOptions() {
+		List<Option> list = new ArrayList<>();
+		list.add(Option.of(this.all ? "Per piece" : "Auto (" + RuneShape.defaultFor(this.selected).label + ")"));
+		for (RuneShape shape : RuneShape.values()) list.add(Option.of(shape.label));
+		return list;
+	}
+
 	private List<Option> runeEffectOptions() {
 		List<Option> options = new ArrayList<>();
 		options.add(Option.of("None"));
@@ -541,9 +549,9 @@ public final class VanityScreen extends Screen {
 			this.rune().enabled = index > 0;
 			if (index > 0) this.rune().effect = RuneEffect.values()[index - 1];
 		});
-		this.dropdown(Page.RUNE, this.panelX + halfW + GAP, r0, halfW, "Shape", () -> enumOptions(RuneShape.values(), s -> s.label),
-				() -> this.rune().shapeFor(this.all ? CosmeticSlot.HEAD : this.selected).ordinal(),
-				index -> this.rune().shape = RuneShape.values()[index]);
+		this.dropdown(Page.RUNE, this.panelX + halfW + GAP, r0, halfW, "Shape", this::runeShapeOptions,
+				() -> this.rune().shape == null ? 0 : this.rune().shape.ordinal() + 1,
+				index -> this.rune().shape = index == 0 ? null : RuneShape.values()[index - 1]);
 
 		IntConsumer setRuneColor = color -> {
 			Rune rune = this.rune();

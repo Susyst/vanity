@@ -536,6 +536,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			VanityConfig config = VanityClient.config();
 			config.chest.rune.enabled = false;
 			config.legs.rune.enabled = false;
+			config.head.rune.shape = null; // "Per piece": every slot keeps its own shape
 		});
 		context.setScreen(() -> VanityScreen.allSlots(VanityScreen.Page.RUNE));
 		context.waitTicks(5);
@@ -551,6 +552,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			for (CosmeticSlot slot : CosmeticSlot.values()) {
 				Rune rune = VanityClient.config().get(slot).rune;
 				check(rune.enabled && rune.effect == RuneEffect.RAINBOW, slot.label + " should get the Rainbow rune picked on the All tab, got " + rune.effect + " enabled=" + rune.enabled);
+				check(rune.shape == null, slot.label + " should keep its own rune shape, got " + rune.shape);
 			}
 		});
 		context.takeScreenshot("25d_all_slots_rainbow_picked");
