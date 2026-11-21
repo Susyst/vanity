@@ -115,14 +115,16 @@ public final class ArmorFit {
 	private static final List<Target> CHEST_TARGETS = List.of(Target.BODY, Target.RIGHT_ARM, Target.LEFT_ARM);
 	private static final List<Target> LEGS_TARGETS = List.of(Target.WAIST, Target.RIGHT_LEG, Target.LEFT_LEG);
 	private static final List<Target> FEET_TARGETS = List.of(Target.RIGHT_FOOT, Target.LEFT_FOOT);
+	private static final List<Target> BODY_ONLY = List.of(Target.BODY);
+	private static final List<Target> WAIST_ONLY = List.of(Target.WAIST);
 
 	/** The body parts a slot's armor covers. Vanilla-size mode uses one copy on the main part. */
 	public static List<Target> targets(CosmeticSlot slot, FitMode mode) {
 		if (mode == FitMode.FREE) {
 			return switch (slot) {
 				case HEAD -> HEAD_TARGETS;
-				case CHEST -> List.of(Target.BODY);
-				case LEGS -> List.of(Target.WAIST);
+				case CHEST -> BODY_ONLY;
+				case LEGS -> WAIST_ONLY;
 				case FEET -> FEET_TARGETS;
 			};
 		}
