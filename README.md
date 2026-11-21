@@ -15,6 +15,13 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 4. For one slot only, pick its tab and type an armor id (`netherite_chestplate`, `golden_helmet`...), or hold one and
    press **Held**. **Clear** goes back to your real armor for that slot.
 
+Per-slot options:
+- **Invisible**: show nothing in that slot, not even your real armor.
+- **No armor: Hide/Show**: by default a look disappears when you take that armor off; set Show to keep it.
+- **Glint**: enchantment shine. Like real (shine if your real armor is enchanted), On or Off.
+- **Trim**: keep your real armor's trim on the look, or hide it.
+- **Dye**: recolor leather looks with Red/Green/Blue sliders.
+
 The look also shows on the icons of the armor you're wearing, in your inventory (turn off with **Inv icons**). Tooltips
 keep the real item's name and add a "Vanity look" line.
 

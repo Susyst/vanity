@@ -11,6 +11,9 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.DyedItemColor;
+import net.minecraft.world.item.equipment.EquipmentAssets;
+import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.item.equipment.trim.ArmorTrim;
 import net.minecraft.world.level.block.AbstractSkullBlock;
 
@@ -33,7 +36,7 @@ public final class VanityCosmetics {
 
 	/**
 	 * True if the item is real armor for this slot (netherite chestplate in Chest, etc.). Those are drawn by the
-	 * vanilla armor renderer, so they look exactly like worn armor.
+	 * vanilla armor renderer, so they look exactly like worn armor, texture packs included.
 	 */
 	public static boolean isArmorLook(CosmeticSlot slot, ItemStack stack) {
 		return !stack.isEmpty() && HumanoidArmorLayer.shouldRender(stack, slot.equipmentSlot);
@@ -51,38 +54,49 @@ public final class VanityCosmetics {
 		return isArmorLook(slot, stack) || isWornHead(slot, stack);
 	}
 
+	/** True for leather-style armor that can be dyed. */
+	public static boolean isDyeable(ItemStack stack) {
+		Equippable equippable = stack.get(DataComponents.EQUIPPABLE);
+		return equippable != null && equippable.assetId().filter(id -> id.equals(EquipmentAssets.LEATHER)).isPresent();
+	}
+
 	public static void extract(VanityRenderData data, AvatarRenderState state, LivingEntity entity, ItemModelResolver resolver) {
 		VanityConfig config = VanityClient.config();
 
 		for (CosmeticSlot slot : CosmeticSlot.values()) {
 			int i = slot.ordinal();
-			SlotSettings settings = config.get(slot);
-			ItemStack stack = config.enabled ? settings.stack() : ItemStack.EMPTY;
+			data.active[i] = false;
+			data.items[i].clear();
+			if (!config.enabled) continue;
 
-			if (stack.isEmpty()) {
-				data.active[i] = false;
-				data.items[i].clear();
+			SlotSettings settings = config.get(slot);
+			ItemStack worn = entity.getItemBySlot(slot.equipmentSlot);
+
+			if (settings.invisible) {
+				hideRealArmor(slot, state);
 				continue;
 			}
 
-			if (isWornHead(slot, stack) && stack.getItem() instanceof BlockItem blockItem
+			ItemStack look = settings.stack();
+			if (look.isEmpty()) continue;
+			if (settings.onlyWhenWorn && worn.isEmpty()) continue;
+
+			if (isWornHead(slot, look) && look.getItem() instanceof BlockItem blockItem
 					&& blockItem.getBlock() instanceof AbstractSkullBlock skull) {
 				// Player and mob heads: shown like a worn head, with the head's own skin.
-				data.active[i] = false;
-				data.items[i].clear();
 				state.headEquipment = ItemStack.EMPTY;
 				state.headItem.clear();
 				state.wornHeadType = skull.getType();
-				state.wornHeadProfile = stack.get(DataComponents.PROFILE);
+				state.wornHeadProfile = look.get(DataComponents.PROFILE);
 				continue;
 			}
 
-			if (isArmorLook(slot, stack)) {
+			if (isArmorLook(slot, look)) {
+				// Keep elytra wings visible: the chest look would replace them.
+				if (slot == CosmeticSlot.CHEST && worn.has(DataComponents.GLIDER)) continue;
+
 				// Swap the armor the game draws: wearing diamond, shown as netherite.
-				data.active[i] = false;
-				data.items[i].clear();
-				ItemStack real = equipment(slot, state);
-				setEquipment(slot, state, withLookOf(stack, real));
+				setEquipment(slot, state, styled(look, equipment(slot, state), settings));
 
 				if (slot == CosmeticSlot.HEAD) {
 					state.headItem.clear();
@@ -94,7 +108,7 @@ public final class VanityCosmetics {
 
 			// Any other item or block: draw it fitted to the armor shape.
 			ItemDisplayContext context = settings.mode == FitMode.FREE ? ItemDisplayContext.HEAD : ItemDisplayContext.NONE;
-			resolver.updateForLiving(data.items[i], stack, context, entity);
+			resolver.updateForLiving(data.items[i], look, context, entity);
 			data.settings[i] = settings.copy();
 			data.active[i] = !data.items[i].isEmpty();
 
@@ -106,7 +120,7 @@ public final class VanityCosmetics {
 
 	/**
 	 * The slot whose look applies to this exact item: the item must be the one you are wearing in that slot (not a copy
-	 * elsewhere in the inventory) and the slot must have a look. Null otherwise.
+	 * elsewhere in the inventory) and the slot must have a visible look. Null otherwise.
 	 */
 	public static CosmeticSlot wornSlotWithLook(ItemStack stack) {
 		if (stack.isEmpty()) return null;
@@ -117,7 +131,8 @@ public final class VanityCosmetics {
 
 		for (CosmeticSlot slot : CosmeticSlot.values()) {
 			if (player.getItemBySlot(slot.equipmentSlot) == stack) {
-				return config.get(slot).stack().isEmpty() ? null : slot;
+				SlotSettings settings = config.get(slot);
+				return settings.invisible || settings.stack().isEmpty() ? null : slot;
 			}
 		}
 
@@ -130,21 +145,34 @@ public final class VanityCosmetics {
 		CosmeticSlot slot = wornSlotWithLook(stack);
 		if (slot == null) return stack;
 
-		ItemStack look = VanityClient.config().get(slot).stack();
-		return isArmorLook(slot, look) ? withLookOf(look, stack) : look;
+		SlotSettings settings = VanityClient.config().get(slot);
+		ItemStack look = settings.stack();
+		return isArmorLook(slot, look) ? styled(look, stack, settings) : look;
 	}
 
-	/** Keeps the enchantment shine and armor trim of the armor you're really wearing. */
-	private static ItemStack withLookOf(ItemStack cosmetic, ItemStack real) {
-		if (real.isEmpty()) return cosmetic;
+	/** Applies the slot's glint, trim and dye options to an armor look. */
+	public static ItemStack styled(ItemStack look, ItemStack real, SlotSettings settings) {
+		ItemStack copy = look.copy();
 
-		ArmorTrim trim = real.get(DataComponents.TRIM);
-		boolean glint = real.hasFoil();
-		if (trim == null && !glint) return cosmetic;
+		switch (settings.glint) {
+			case AUTO -> {
+				if (!real.isEmpty() && real.hasFoil()) copy.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+			}
+			case ON -> copy.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+			case OFF -> copy.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
+		}
 
-		ItemStack copy = cosmetic.copy();
-		if (trim != null) copy.set(DataComponents.TRIM, trim);
-		if (glint) copy.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+		if (settings.keepTrim) {
+			ArmorTrim trim = real.isEmpty() ? null : real.get(DataComponents.TRIM);
+			if (trim != null) copy.set(DataComponents.TRIM, trim);
+		} else {
+			copy.remove(DataComponents.TRIM);
+		}
+
+		if (settings.customDye && isDyeable(copy)) {
+			copy.set(DataComponents.DYED_COLOR, new DyedItemColor(settings.dyeColor & 0xFFFFFF));
+		}
+
 		return copy;
 	}
 

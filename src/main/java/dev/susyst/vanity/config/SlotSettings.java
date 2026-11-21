@@ -17,6 +17,18 @@ public final class SlotSettings {
 	 * look was taken from a held or worn item. Null means a plain item made from {@link #item}.
 	 */
 	public JsonElement itemStack;
+	/** Show nothing in this slot: hides your real armor and any look. */
+	public boolean invisible;
+	/** Only show the look while you're actually wearing something in this slot. */
+	public boolean onlyWhenWorn = true;
+	/** Enchantment shine on armor looks. */
+	public GlintMode glint = GlintMode.AUTO;
+	/** Keep the armor trim of the armor you're really wearing. */
+	public boolean keepTrim = true;
+	/** Recolor dyeable looks (leather) with {@link #dyeColor}. */
+	public boolean customDye;
+	/** RGB dye color, default is undyed leather. */
+	public int dyeColor = 0xA06540;
 	public FitMode mode = FitMode.STRETCH;
 	/** Hide the real armor (or head item) in this slot while a cosmetic is shown. */
 	public boolean hideArmor = true;
@@ -83,6 +95,14 @@ public final class SlotSettings {
 		return this.itemStack != null;
 	}
 
+	/** Resets glint, trim and dye. */
+	public void resetArmorStyle() {
+		this.glint = GlintMode.AUTO;
+		this.keepTrim = true;
+		this.customDye = false;
+		this.dyeColor = 0xA06540;
+	}
+
 	public void resetTransform() {
 		this.offsetX = 0.0F;
 		this.offsetY = 0.0F;
@@ -98,6 +118,12 @@ public final class SlotSettings {
 		SlotSettings copy = new SlotSettings();
 		copy.item = this.item;
 		copy.itemStack = this.itemStack;
+		copy.invisible = this.invisible;
+		copy.onlyWhenWorn = this.onlyWhenWorn;
+		copy.glint = this.glint;
+		copy.keepTrim = this.keepTrim;
+		copy.customDye = this.customDye;
+		copy.dyeColor = this.dyeColor;
 		copy.mode = this.mode;
 		copy.hideArmor = this.hideArmor;
 		copy.offsetX = this.offsetX;
@@ -115,6 +141,8 @@ public final class SlotSettings {
 		if (this.item == null) this.item = "";
 		if (this.itemStack != null && this.itemStack.isJsonNull()) this.itemStack = null;
 		if (this.mode == null) this.mode = FitMode.STRETCH;
+		if (this.glint == null) this.glint = GlintMode.AUTO;
+		this.dyeColor &= 0xFFFFFF;
 		if (!Float.isFinite(this.scale) || this.scale <= 0.0F) this.scale = 1.0F;
 		if (!Float.isFinite(this.offsetX)) this.offsetX = 0.0F;
 		if (!Float.isFinite(this.offsetY)) this.offsetY = 0.0F;

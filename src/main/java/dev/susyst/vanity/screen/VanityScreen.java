@@ -7,6 +7,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
@@ -15,6 +16,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
 
@@ -26,8 +28,8 @@ import dev.susyst.vanity.config.VanityConfig;
 import dev.susyst.vanity.render.VanityCosmetics;
 
 /**
- * The wardrobe. Pick what each armor slot looks like: another armor (wear diamond, show netherite) or any item or block,
- * with a live preview.
+ * The wardrobe. Pick what each armor slot looks like: another armor (wear diamond, show netherite), a SkyBlock piece,
+ * or any item or block, with a live preview. Armor looks get glint, trim and dye options; other items get fit options.
  */
 public final class VanityScreen extends Screen {
 	private static final int ROW = 20;
@@ -41,30 +43,48 @@ public final class VanityScreen extends Screen {
 	private float previewYaw;
 
 	private final List<Button> slotButtons = new ArrayList<>();
+	/** Shown for armor looks (and empty slots). */
+	private final List<AbstractWidget> armorWidgets = new ArrayList<>();
+	/** Shown for other items, which are fitted to the armor shape. */
+	private final List<AbstractWidget> fitWidgets = new ArrayList<>();
+
 	private EditBox itemBox;
 	private Button setButton;
+	private Button invisibleButton;
+	private Button wornOnlyButton;
+	private Button glintButton;
+	private Button trimButton;
+	private Button dyeButton;
+	private ValueSlider dyeRed;
+	private ValueSlider dyeGreen;
+	private ValueSlider dyeBlue;
 	private Button modeButton;
 	private Button hideButton;
-	private Button enabledButton;
-	private Button inventoryButton;
-	private Button resetButton;
+	private ValueSlider scale;
 	private ValueSlider offsetX;
 	private ValueSlider offsetY;
 	private ValueSlider offsetZ;
 	private ValueSlider rotX;
 	private ValueSlider rotY;
 	private ValueSlider rotZ;
-	private ValueSlider scale;
+	private Button enabledButton;
+	private Button inventoryButton;
 
-	/** True while widgets are being updated from code, so the item box doesn't treat it as typing. */
+	/** True while widgets are being updated from code, so the item box and sliders don't treat it as user input. */
 	private boolean syncing;
+	private boolean initialized;
 	private int previewRight;
 	private int panelX;
 	private int panelW;
 	private int statusY;
 
 	public VanityScreen() {
+		this(CosmeticSlot.HEAD);
+	}
+
+	public VanityScreen(CosmeticSlot initialSlot) {
 		super(Component.translatable("screen.vanity.title"));
+		this.selected = initialSlot;
 	}
 
 	private static VanityConfig config() {
@@ -75,12 +95,26 @@ public final class VanityScreen extends Screen {
 		return config().get(this.selected);
 	}
 
+	private static Tooltip tip(String text) {
+		return Tooltip.create(Component.literal(text));
+	}
+
+	private Button button(int x, int y, int w, Button.OnPress onPress) {
+		return this.addRenderableWidget(Button.builder(Component.empty(), onPress).bounds(x, y, w, ROW).build());
+	}
+
 	@Override
 	protected void init() {
+		this.initialized = false;
 		this.slotButtons.clear();
+		this.armorWidgets.clear();
+		this.fitWidgets.clear();
 		this.previewRight = Math.max(110, (int) (this.width * 0.38F));
 		this.panelX = this.previewRight + 8;
 		this.panelW = Math.max(180, Math.min(this.width - this.panelX - 10, 300));
+		int thirdW = (this.panelW - GAP * 2) / 3;
+		int x2 = this.panelX + thirdW + GAP;
+		int x3 = this.panelX + 2 * (thirdW + GAP);
 
 		int y = 28;
 
@@ -99,12 +133,9 @@ public final class VanityScreen extends Screen {
 		y += ROW + GAP;
 
 		// One click: make all four slots look like one armor material
-		this.setButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> this.cycleArmorSet())
-				.bounds(this.panelX, y, this.panelW, ROW)
-				.build());
-		this.setButton.setTooltip(Tooltip.create(Component.literal("Click to change how all four armor slots look. Your real armor stays the same; only the look changes.")));
-
-		y += ROW + 8;
+		this.setButton = this.button(this.panelX, y, this.panelW, b -> this.cycleArmorSet());
+		this.setButton.setTooltip(tip("Click to change how all four armor slots look. Your real armor stays the same; only the look changes."));
+		y += ROW + 6;
 
 		// Item id, "use held item", "use worn item", clear
 		int smallW = 36;
@@ -117,20 +148,18 @@ public final class VanityScreen extends Screen {
 			if (this.syncing) return;
 			// Typing an id switches the slot to a plain item.
 			this.current().setLook(value.trim());
-			if (this.scale != null) this.refresh();
+			this.refresh();
 		});
 		this.addRenderableWidget(this.itemBox);
 
 		Button held = Button.builder(Component.literal("Held"), b -> this.useHeldItem())
-				.bounds(this.panelX + boxW + GAP, y, smallW, ROW)
-				.build();
-		held.setTooltip(Tooltip.create(Component.literal("Use the exact item in your main hand, including its name, dye color, head skin and SkyBlock data")));
+				.bounds(this.panelX + boxW + GAP, y, smallW, ROW).build();
+		held.setTooltip(tip("Use the exact item in your main hand, including its name, dye color, head skin and SkyBlock data"));
 		this.addRenderableWidget(held);
 
 		Button worn = Button.builder(Component.literal("Worn"), b -> this.useWornItem())
-				.bounds(this.panelX + boxW + GAP + smallW + GAP, y, smallW, ROW)
-				.build();
-		worn.setTooltip(Tooltip.create(Component.literal("Save the look of what you're wearing in this slot right now (e.g. a SkyBlock armor piece). Then you can wear something else and keep this look.")));
+				.bounds(this.panelX + boxW + GAP + smallW + GAP, y, smallW, ROW).build();
+		worn.setTooltip(tip("Save the look of what you're wearing in this slot right now (e.g. a SkyBlock armor piece). Then you can wear something else and keep this look."));
 		this.addRenderableWidget(worn);
 
 		Button clear = Button.builder(Component.literal("Clear"), b -> {
@@ -138,64 +167,117 @@ public final class VanityScreen extends Screen {
 			this.syncItemBox();
 			this.refresh();
 		}).bounds(this.panelX + boxW + GAP + 2 * (smallW + GAP), y, smallW, ROW).build();
+		clear.setTooltip(tip("Go back to your real armor in this slot"));
 		this.addRenderableWidget(clear);
 
 		y += ROW + 2;
 		this.statusY = y + 2;
 		y += 14;
 
-		// Fit mode and hide-armor toggle
-		int halfW = (this.panelW - GAP) / 2;
-		this.modeButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
-			this.current().mode = this.current().mode.next();
+		// Options for every slot
+		this.invisibleButton = this.button(this.panelX, y, thirdW, b -> {
+			this.current().invisible = !this.current().invisible;
 			this.refresh();
-		}).bounds(this.panelX, y, halfW, ROW).build());
+		});
+		this.invisibleButton.setTooltip(tip("Show nothing in this slot, not even your real armor"));
 
-		this.hideButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
-			this.current().hideArmor = !this.current().hideArmor;
+		this.wornOnlyButton = this.button(x2, y, thirdW, b -> {
+			this.current().onlyWhenWorn = !this.current().onlyWhenWorn;
 			this.refresh();
-		}).bounds(this.panelX + halfW + GAP, y, halfW, ROW).build());
-		this.hideButton.setTooltip(Tooltip.create(Component.literal("Hide your real armor in this slot while the cosmetic is shown")));
+		});
+		this.wornOnlyButton.setTooltip(tip("Hide: the look disappears when you take the armor off this slot. Show: the look stays even with nothing equipped."));
 
+		Button reset = this.button(x3, y, thirdW, b -> {
+			SlotSettings s = this.current();
+			if (this.showsArmorOptions()) {
+				s.resetArmorStyle();
+			} else {
+				s.resetTransform();
+			}
+			this.refresh();
+		});
+		reset.setMessage(Component.literal("Reset"));
+		reset.setTooltip(tip("Reset this slot's options below"));
 		y += ROW + GAP;
 
-		// Offset (pixels), rotation (degrees), size
-		int thirdW = (this.panelW - GAP * 2) / 3;
+		int optionsY = y;
+
+		// Armor look options: glint, trim, dye
+		this.glintButton = this.button(this.panelX, y, thirdW, b -> {
+			this.current().glint = this.current().glint.next();
+			this.refresh();
+		});
+		this.glintButton.setTooltip(tip("Enchantment shine. Like real: shine if the armor you're wearing is enchanted."));
+		this.trimButton = this.button(x2, y, thirdW, b -> {
+			this.current().keepTrim = !this.current().keepTrim;
+			this.refresh();
+		});
+		this.trimButton.setTooltip(tip("Keep the trim of the armor you're wearing on the look, or show no trim"));
+		this.dyeButton = this.button(x3, y, thirdW, b -> {
+			this.current().customDye = !this.current().customDye;
+			this.refresh();
+		});
+		this.dyeButton.setTooltip(tip("Recolor leather looks with the sliders below"));
+		y += ROW + GAP;
+
+		this.dyeRed = this.addRenderableWidget(new ValueSlider(this.panelX, y, thirdW, ROW, "Red", 0, 255, 1, "%.0f", 0, v -> this.setDyeChannel(16, v)));
+		this.dyeGreen = this.addRenderableWidget(new ValueSlider(x2, y, thirdW, ROW, "Green", 0, 255, 1, "%.0f", 0, v -> this.setDyeChannel(8, v)));
+		this.dyeBlue = this.addRenderableWidget(new ValueSlider(x3, y, thirdW, ROW, "Blue", 0, 255, 1, "%.0f", 0, v -> this.setDyeChannel(0, v)));
+		this.armorWidgets.addAll(List.of(this.glintButton, this.trimButton, this.dyeButton, this.dyeRed, this.dyeGreen, this.dyeBlue));
+
+		// Fit options for non-armor items, in the same space
+		y = optionsY;
+		this.modeButton = this.button(this.panelX, y, thirdW, b -> {
+			this.current().mode = this.current().mode.next();
+			this.refresh();
+		});
+		this.hideButton = this.button(x2, y, thirdW, b -> {
+			this.current().hideArmor = !this.current().hideArmor;
+			this.refresh();
+		});
+		this.hideButton.setTooltip(tip("Hide your real armor in this slot while the item is shown"));
+		this.scale = this.addRenderableWidget(new ValueSlider(x3, y, thirdW, ROW, "Size", 0.25, 3.0, 0.05, "%.2f", 1, v -> this.current().scale = (float) v));
+		y += ROW + GAP;
+
 		this.offsetX = this.addRenderableWidget(new ValueSlider(this.panelX, y, thirdW, ROW, "Move X", -16, 16, 0.5, "%.1f", 0, v -> this.current().offsetX = (float) v));
-		this.offsetY = this.addRenderableWidget(new ValueSlider(this.panelX + thirdW + GAP, y, thirdW, ROW, "Move Y", -16, 16, 0.5, "%.1f", 0, v -> this.current().offsetY = (float) v));
-		this.offsetZ = this.addRenderableWidget(new ValueSlider(this.panelX + 2 * (thirdW + GAP), y, thirdW, ROW, "Move Z", -16, 16, 0.5, "%.1f", 0, v -> this.current().offsetZ = (float) v));
+		this.offsetY = this.addRenderableWidget(new ValueSlider(x2, y, thirdW, ROW, "Move Y", -16, 16, 0.5, "%.1f", 0, v -> this.current().offsetY = (float) v));
+		this.offsetZ = this.addRenderableWidget(new ValueSlider(x3, y, thirdW, ROW, "Move Z", -16, 16, 0.5, "%.1f", 0, v -> this.current().offsetZ = (float) v));
 		y += ROW + GAP;
 
 		this.rotX = this.addRenderableWidget(new ValueSlider(this.panelX, y, thirdW, ROW, "Turn X", -180, 180, 5, "%.0f", 0, v -> this.current().rotX = (float) v));
-		this.rotY = this.addRenderableWidget(new ValueSlider(this.panelX + thirdW + GAP, y, thirdW, ROW, "Turn Y", -180, 180, 5, "%.0f", 0, v -> this.current().rotY = (float) v));
-		this.rotZ = this.addRenderableWidget(new ValueSlider(this.panelX + 2 * (thirdW + GAP), y, thirdW, ROW, "Turn Z", -180, 180, 5, "%.0f", 0, v -> this.current().rotZ = (float) v));
-		y += ROW + GAP;
-
-		this.scale = this.addRenderableWidget(new ValueSlider(this.panelX, y, thirdW * 2 + GAP, ROW, "Size", 0.25, 3.0, 0.05, "%.2f", 1, v -> this.current().scale = (float) v));
-		this.resetButton = this.addRenderableWidget(Button.builder(Component.literal("Reset"), b -> {
-			this.current().resetTransform();
-			this.refresh();
-		}).bounds(this.panelX + 2 * (thirdW + GAP), y, thirdW, ROW).build());
+		this.rotY = this.addRenderableWidget(new ValueSlider(x2, y, thirdW, ROW, "Turn Y", -180, 180, 5, "%.0f", 0, v -> this.current().rotY = (float) v));
+		this.rotZ = this.addRenderableWidget(new ValueSlider(x3, y, thirdW, ROW, "Turn Z", -180, 180, 5, "%.0f", 0, v -> this.current().rotZ = (float) v));
+		this.fitWidgets.addAll(List.of(this.modeButton, this.hideButton, this.scale, this.offsetX, this.offsetY, this.offsetZ, this.rotX, this.rotY, this.rotZ));
 
 		// Bottom row
 		int bottomY = this.height - 28;
 		this.addRenderableWidget(new ValueSlider(10, bottomY, this.previewRight - 14, ROW, "Turn view", 0, 360, 5, "%.0f", this.previewYaw, v -> this.previewYaw = (float) v));
 
-		this.enabledButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+		this.enabledButton = this.button(this.panelX, bottomY, thirdW, b -> {
 			config().enabled = !config().enabled;
 			this.refresh();
-		}).bounds(this.panelX, bottomY, thirdW, ROW).build());
+		});
+		this.enabledButton.setTooltip(tip("Turn all Vanity looks on or off"));
 
-		this.inventoryButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+		this.inventoryButton = this.button(x2, bottomY, thirdW, b -> {
 			config().showInInventory = !config().showInInventory;
 			this.refresh();
-		}).bounds(this.panelX + thirdW + GAP, bottomY, thirdW, ROW).build());
-		this.inventoryButton.setTooltip(Tooltip.create(Component.literal("Also show the looks on your worn armor's icons in the inventory")));
+		});
+		this.inventoryButton.setTooltip(tip("Also show the looks on your worn armor's icons in the inventory"));
 
-		this.addRenderableWidget(Button.builder(Component.literal("Done"), b -> this.onClose())
-				.bounds(this.panelX + 2 * (thirdW + GAP), bottomY, thirdW, ROW)
-				.build());
+		Button done = this.button(x3, bottomY, thirdW, b -> this.onClose());
+		done.setMessage(Component.literal("Done"));
 
+		this.initialized = true;
+		this.refresh();
+	}
+
+	private void setDyeChannel(int shift, double value) {
+		if (this.syncing) return;
+		SlotSettings s = this.current();
+		int channel = (int) Math.round(value) & 0xFF;
+		s.dyeColor = (s.dyeColor & ~(0xFF << shift)) | (channel << shift);
+		s.customDye = true;
 		this.refresh();
 	}
 
@@ -250,9 +332,23 @@ public final class VanityScreen extends Screen {
 		this.syncing = false;
 	}
 
+	/** Armor looks (and empty slots) show glint/trim/dye options; other items show fit options. */
+	private boolean showsArmorOptions() {
+		ItemStack stack = this.current().stack();
+		return stack.isEmpty() || VanityCosmetics.usesVanillaLook(this.selected, stack);
+	}
+
+	private static String onOff(boolean value) {
+		return value ? "ON" : "OFF";
+	}
+
 	/** Syncs every widget with the selected slot's settings. */
 	private void refresh() {
+		if (!this.initialized) return;
+		this.syncing = true;
+
 		SlotSettings s = this.current();
+		ItemStack stack = s.stack();
 		CosmeticSlot[] slots = CosmeticSlot.values();
 
 		for (int i = 0; i < this.slotButtons.size(); i++) {
@@ -263,24 +359,38 @@ public final class VanityScreen extends Screen {
 		String setLabel = set != null ? set.label : ArmorSet.noneWorn(config()) ? "Off (real armor)" : "Custom";
 		this.setButton.setMessage(Component.literal("Armor look: " + setLabel));
 
-		// Real armor pieces use the vanilla armor model, so fitting and transforms don't apply to them.
-		boolean fitted = !VanityCosmetics.usesVanillaLook(this.selected, s.stack());
-		this.modeButton.active = fitted;
-		this.hideButton.active = fitted;
-		this.offsetX.active = fitted;
-		this.offsetY.active = fitted;
-		this.offsetZ.active = fitted;
-		this.rotX.active = fitted;
-		this.rotY.active = fitted;
-		this.rotZ.active = fitted;
-		this.scale.active = fitted;
-		this.resetButton.active = fitted;
+		this.invisibleButton.setMessage(Component.literal("Invisible: " + onOff(s.invisible)));
+		this.wornOnlyButton.setMessage(Component.literal("No armor: " + (s.onlyWhenWorn ? "Hide" : "Show")));
 
+		boolean armorOptions = this.showsArmorOptions();
+		for (AbstractWidget widget : this.armorWidgets) widget.visible = armorOptions;
+		for (AbstractWidget widget : this.fitWidgets) widget.visible = !armorOptions;
+
+		// Armor options
+		boolean armorLook = VanityCosmetics.isArmorLook(this.selected, stack) && !s.invisible;
+		boolean dyeable = armorLook && VanityCosmetics.isDyeable(stack);
+		this.glintButton.active = armorLook;
+		this.trimButton.active = armorLook;
+		this.dyeButton.active = dyeable;
+		this.dyeRed.active = dyeable;
+		this.dyeGreen.active = dyeable;
+		this.dyeBlue.active = dyeable;
+		this.glintButton.setMessage(Component.literal("Glint: " + s.glint.label));
+		this.trimButton.setMessage(Component.literal("Trim: " + (s.keepTrim ? "Keep" : "Hide")));
+
+		MutableComponent dyeLabel = Component.literal("Dye: " + onOff(s.customDye));
+		if (s.customDye) dyeLabel.append(" ").append(Component.literal("██").withColor(s.dyeColor));
+		this.dyeButton.setMessage(dyeLabel);
+		this.dyeRed.setRealValue((s.dyeColor >> 16) & 0xFF);
+		this.dyeGreen.setRealValue((s.dyeColor >> 8) & 0xFF);
+		this.dyeBlue.setRealValue(s.dyeColor & 0xFF);
+
+		// Fit options
+		boolean fitActive = !s.invisible;
+		for (AbstractWidget widget : this.fitWidgets) widget.active = fitActive;
 		this.modeButton.setMessage(Component.literal("Fit: " + s.mode.label));
-		this.modeButton.setTooltip(fitted ? Tooltip.create(Component.literal(s.mode.description)) : null);
-		this.hideButton.setMessage(Component.literal("Hide armor: " + (s.hideArmor ? "ON" : "OFF")));
-		this.enabledButton.setMessage(Component.literal("Cosmetics: " + (config().enabled ? "ON" : "OFF")));
-		this.inventoryButton.setMessage(Component.literal("Inv icons: " + (config().showInInventory ? "ON" : "OFF")));
+		this.modeButton.setTooltip(armorOptions ? null : tip(s.mode.description));
+		this.hideButton.setMessage(Component.literal("Hide armor: " + onOff(s.hideArmor)));
 		this.offsetX.setRealValue(s.offsetX);
 		this.offsetY.setRealValue(s.offsetY);
 		this.offsetZ.setRealValue(s.offsetZ);
@@ -288,6 +398,11 @@ public final class VanityScreen extends Screen {
 		this.rotY.setRealValue(s.rotY);
 		this.rotZ.setRealValue(s.rotZ);
 		this.scale.setRealValue(s.scale);
+
+		this.enabledButton.setMessage(Component.literal("Looks: " + onOff(config().enabled)));
+		this.inventoryButton.setMessage(Component.literal("Inv icons: " + onOff(config().showInInventory)));
+
+		this.syncing = false;
 	}
 
 	@Override
@@ -305,7 +420,9 @@ public final class VanityScreen extends Screen {
 		SlotSettings s = this.current();
 		ItemStack stack = s.stack();
 
-		if (s.item.isBlank()) {
+		if (s.invisible) {
+			graphics.text(this.font, Component.literal(this.selected.label + " is invisible."), this.panelX, this.statusY, GRAY);
+		} else if (s.item.isBlank()) {
 			graphics.text(this.font, Component.literal("Showing your real armor."), this.panelX, this.statusY, GRAY);
 		} else if (stack.isEmpty()) {
 			graphics.text(this.font, Component.literal("Unknown item id"), this.panelX, this.statusY, RED);

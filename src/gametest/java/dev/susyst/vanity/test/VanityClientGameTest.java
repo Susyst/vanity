@@ -21,6 +21,8 @@ import net.minecraft.world.item.component.DyedItemColor;
 import net.minecraft.world.item.component.ResolvableProfile;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 
@@ -31,6 +33,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.FitMode;
+import dev.susyst.vanity.config.GlintMode;
 import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.VanityConfig;
 import dev.susyst.vanity.render.VanityCosmetics;
@@ -135,6 +138,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 
 			testSkyBlockLooks(context, singleplayer);
 			testInventoryIcons(context, singleplayer);
+			testArmorOptions(context, singleplayer);
 		}
 	}
 
@@ -275,6 +279,91 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.runOnClient(client -> VanityClient.config().showInInventory = true);
 	}
 
+	/** The armor the game is about to draw on the player for this slot (what the armor layer renders). */
+	private static ItemStack drawnArmor(Minecraft client, EquipmentSlot slot) {
+		EntityRenderState state = client.getEntityRenderDispatcher().getRenderer(client.player).createRenderState(client.player, 1.0F);
+
+		if (!(state instanceof AvatarRenderState avatar)) {
+			throw new AssertionError("Expected a player render state");
+		}
+
+		return switch (slot) {
+			case HEAD -> avatar.headEquipment;
+			case CHEST -> avatar.chestEquipment;
+			case LEGS -> avatar.legsEquipment;
+			case FEET -> avatar.feetEquipment;
+			default -> ItemStack.EMPTY;
+		};
+	}
+
+	private static void check(boolean condition, String message) {
+		if (!condition) throw new AssertionError(message);
+	}
+
+	/** "No armor" hide/show, invisible slots, leather dye and glint on/off. */
+	private static void testArmorOptions(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		singleplayer.getServer().runOnServer(server -> {
+			var player = singleplayer.getConnection().getServerPlayer();
+			player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+			ItemStack enchantedChest = new ItemStack(Items.DIAMOND_CHESTPLATE);
+			enchantedChest.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+			player.setItemSlot(EquipmentSlot.CHEST, enchantedChest);
+			player.setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.GOLDEN_LEGGINGS));
+			player.setItemSlot(EquipmentSlot.FEET, ItemStack.EMPTY); // no boots on
+		});
+		context.waitFor(client -> client.player.getItemBySlot(EquipmentSlot.FEET).isEmpty()
+				&& client.player.getItemBySlot(EquipmentSlot.CHEST).hasFoil());
+
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			set(config.head, "", FitMode.STRETCH);
+			set(config.chest, "minecraft:netherite_chestplate", FitMode.STRETCH);
+			set(config.legs, "minecraft:netherite_leggings", FitMode.STRETCH);
+			set(config.feet, "minecraft:netherite_boots", FitMode.STRETCH);
+
+			// No boots worn: by default the boots look is hidden too
+			check(drawnArmor(client, EquipmentSlot.FEET).isEmpty(), "Boots look should hide when no boots are worn");
+			config.feet.onlyWhenWorn = false;
+			check(drawnArmor(client, EquipmentSlot.FEET).getItem() == Items.NETHERITE_BOOTS, "Boots look should show when 'No armor: Show'");
+			config.feet.onlyWhenWorn = true;
+
+			// Glint: like real (enchanted diamond), off, on
+			check(drawnArmor(client, EquipmentSlot.CHEST).hasFoil(), "Glint 'Like real' should copy the enchanted chestplate's shine");
+			config.chest.glint = GlintMode.OFF;
+			check(!drawnArmor(client, EquipmentSlot.CHEST).hasFoil(), "Glint 'Off' should remove the shine");
+			config.legs.glint = GlintMode.ON;
+			check(drawnArmor(client, EquipmentSlot.LEGS).hasFoil(), "Glint 'On' should add shine to unenchanted leggings");
+
+			// Invisible legs: nothing drawn, not even the real golden leggings
+			config.legs.invisible = true;
+			check(drawnArmor(client, EquipmentSlot.LEGS).isEmpty(), "Invisible slot should draw nothing");
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("13_no_boots_invisible_legs_glint_on_off");
+
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			config.legs.invisible = false;
+			set(config.legs, "", FitMode.STRETCH);
+			set(config.chest, "minecraft:leather_chestplate", FitMode.STRETCH);
+			config.chest.customDye = true;
+			config.chest.dyeColor = 0x30C0FF;
+			set(config.head, "minecraft:leather_helmet", FitMode.STRETCH);
+			config.head.customDye = true;
+			config.head.dyeColor = 0xFF40A0;
+
+			DyedItemColor color = drawnArmor(client, EquipmentSlot.CHEST).get(DataComponents.DYED_COLOR);
+			check(color != null && color.rgb() == 0x30C0FF, "Dyed leather look should use the slider color, got " + color);
+		});
+		context.waitTicks(5);
+		context.takeScreenshot("14_dyed_leather_looks");
+
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST));
+		context.waitTicks(10);
+		context.takeScreenshot("15_wardrobe_dye_sliders");
+		context.setScreen(() -> null);
+	}
+
 	private static final String PACK = "vanity_test_pack";
 	private static final String[] PACK_FILES = {
 			"pack.mcmeta",
@@ -335,7 +424,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 	private static void clearCosmetics(ClientGameTestContext context) {
 		context.runOnClient(client -> {
 			for (CosmeticSlot slot : CosmeticSlot.values()) {
-				VanityClient.config().get(slot).item = "";
+				set(VanityClient.config().get(slot), "", FitMode.STRETCH);
 			}
 		});
 	}
@@ -352,8 +441,11 @@ public class VanityClientGameTest implements FabricClientGameTest {
 	}
 
 	private static void set(SlotSettings settings, String item, FitMode mode) {
-		settings.item = item;
+		settings.setLook(item);
 		settings.mode = mode;
+		settings.invisible = false;
+		settings.onlyWhenWorn = true;
+		settings.resetArmorStyle();
 		settings.hideArmor = true;
 		settings.resetTransform();
 	}
