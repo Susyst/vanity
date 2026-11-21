@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "vanity",
+	"version": "${version}",
+	"name": "Vanity",
+	"description": "Client-side cosmetics: wear any item or block (like glass) as armor. Blocks are fitted to the real armor shape around your head, body, arms, legs and feet.",
+	"authors": [
+		"Susyst"
+	],
+	"contact": {
+		"sources": "https://github.com/Susyst/vanity"
+	},
+	"license": "MIT",
+	"icon": "assets/vanity/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.susyst.vanity.VanityClient"
+		]
+	},
+	"mixins": [
+		"vanity.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

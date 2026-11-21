@@ -1,0 +1,70 @@
+# Builds Vanity on every push. The build log and the finished jar are also
+# force-pushed to the `build-output` branch so they can be read with plain git.
+name: build
+
+on:
+  push:
+    branches-ignore: [build-output]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: setup jdk 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: build
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./gradlew build --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log
+
+      - name: collect errors
+        if: always()
+        run: |
+          grep -nE "error:|warning:|FAILED|BUILD (SUCCESSFUL|FAILED)|What went wrong|Could not|Exception" build.log | head -300 > errors.txt || true
+
+      - name: publish results to build-output branch
+        if: always()
+        run: |
+          mkdir -p out
+          cp build.log errors.txt out/ || true
+          cp build/libs/*.jar out/ 2>/dev/null || true
+          echo "${{ steps.build.outcome }}" > out/STATUS
+          echo "${GITHUB_SHA}" > out/COMMIT
+          cd out
+          git init -q -b build-output
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Build of ${GITHUB_SHA}: ${{ steps.build.outcome }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" build-output
+
+      - name: upload jar
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vanity-jar
+          path: build/libs/
+          if-no-files-found: ignore
+
+      - name: fail if the build failed
+        if: steps.build.outcome != 'success'
+        run: exit 1

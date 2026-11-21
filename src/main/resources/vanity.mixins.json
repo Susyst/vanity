@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"package": "dev.susyst.vanity.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"AvatarRendererMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
