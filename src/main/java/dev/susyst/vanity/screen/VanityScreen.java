@@ -248,7 +248,7 @@ public final class VanityScreen extends Screen {
 			String value = index >= 0 && index < list.size() ? list.get(index).label() : fallback;
 			MutableComponent label = Component.literal(title.isEmpty() ? value : title + ": " + value);
 			if (index >= 0 && index < list.size() && list.get(index).swatch() >= 0) label.append(" ").append(swatch(list.get(index).swatch()));
-			button.setMessage(label.append(Component.literal("  ▾").withColor(0x8FA3B8)));
+			button.setMessage(label.append(Component.literal(" ▾").withColor(0x8FA3B8)));
 		});
 		return button;
 	}
@@ -597,8 +597,8 @@ public final class VanityScreen extends Screen {
 		this.hexBox(Page.RUNE, this.panelX, r3, thirdW, () -> this.rune().color, setRuneColor);
 		this.slider(Page.RUNE, x2, r3, thirdW, "Speed", 0.25, 3.0, 0.25, "%.2f", s -> s.rune.speed, (s, v) -> s.rune.speed = v);
 		GlassButton firstPerson = this.button(Page.RUNE, x3, r3, thirdW, "", () -> config().runesInFirstPerson = !config().runesInFirstPerson);
-		firstPerson.setTooltip(tip("Also show runes in first person (they can get in your way)"));
-		this.sync(() -> firstPerson.setMessage(Component.literal("1st person: " + onOff(config().runesInFirstPerson))));
+		firstPerson.setTooltip(tip("ON: runes only show in third person (F5). OFF: also in first person, where they can get in your way."));
+		this.sync(() -> firstPerson.setMessage(Component.literal("F5 only: " + onOff(!config().runesInFirstPerson))));
 		this.button(Page.RUNE, this.panelX, r4, thirdW, "Reset", () -> {
 			boolean wasOn = this.rune().enabled;
 			RuneEffect effect = this.rune().effect;
@@ -937,7 +937,7 @@ public final class VanityScreen extends Screen {
 			case TRIM -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Also on inventory icons. Texture packs apply.");
 			case DESIGN -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Up to 3 patterns in any color, over your armor.");
 			case RUNE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Particles only you see. Press F5 to look at them.");
-			case OUTFITS -> this.hint(graphics, "Saves all four slots. Press " + VanityClient.nextOutfitKeyName() + " in game to switch outfits.");
+			case OUTFITS -> this.hint(graphics, "Press " + VanityClient.nextOutfitKeyName() + " in game to switch outfits.");
 		}
 
 		LocalPlayer player = this.minecraft.player;
