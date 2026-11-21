@@ -144,6 +144,7 @@ public final class VanityScreen extends Screen {
 		this.itemBox.setMaxLength(128);
 		this.itemBox.setHint(Component.literal("netherite_chestplate"));
 		this.itemBox.setValue(this.current().item);
+		this.itemBox.moveCursorToStart(false);
 		this.itemBox.setResponder(value -> {
 			if (this.syncing) return;
 			// Typing an id switches the slot to a plain item.
@@ -329,6 +330,7 @@ public final class VanityScreen extends Screen {
 	private void syncItemBox() {
 		this.syncing = true;
 		this.itemBox.setValue(this.current().item);
+		this.itemBox.moveCursorToStart(false);
 		this.syncing = false;
 	}
 
