@@ -10,8 +10,8 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.10.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
-3. Click **Armor look** to change all four slots at once: Leather, Chainmail, Iron, Gold, Copper, Diamond,
-   Netherite, then Off (your real armor).
+3. On the **Look** page, open **All slots look like** to change all four slots at once: Leather, Chainmail, Iron,
+   Gold, Copper, Diamond or Netherite (**Real armor** turns it off).
 4. For one slot only, pick its tab and type an armor id (`netherite_chestplate`, `golden_helmet`...), or hold one and
    press **Held**. **Clear** goes back to your real armor for that slot.
 
@@ -47,6 +47,10 @@ that look. Player-head helmets (most SkyBlock helmets) are drawn like a worn hea
 `ArmorFit` reads the cube of each body part from your actual player model (so slim arms are handled), grows it the
 same amount vanilla armor does (1px for helmet/chest/boots, 0.5px for leggings), then measures the item model's real
 bounding box (`ItemStackRenderState#getModelBoundingBox`) and scales/centers it to fill that box.
+
+## Download
+
+Get the jar from [Releases](https://github.com/Susyst/vanity/releases).
 
 ## Build and test
 
