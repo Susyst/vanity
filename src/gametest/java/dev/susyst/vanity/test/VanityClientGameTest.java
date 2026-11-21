@@ -458,6 +458,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		rune.color = color;
 		rune.size = size;
 		rune.amount = amount;
+		rune.length = 14;
 		rune.speed = 1.0F;
 	}
 
@@ -493,10 +494,11 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		singleplayer.getServer().runCommand("time set noon");
 		context.runOnClient(client -> {
 			VanityConfig config = VanityClient.config();
-			rune(config.head.rune, RuneEffect.DUST, RuneShape.HALO, 0x5BD2FF, 3.0F, 8);
-			rune(config.chest.rune, RuneEffect.DUST, RuneShape.WINGS, 0xFF4FD8, 2.5F, 12);
-			rune(config.legs.rune, RuneEffect.RAINBOW, RuneShape.SPIRAL, 0xFFFFFF, 2.0F, 6);
-			rune(config.feet.rune, RuneEffect.FLAME, RuneShape.TRAIL, 0xFFFFFF, 1.0F, 6);
+			rune(config.head.rune, RuneEffect.DUST, RuneShape.HALO, 0x5BD2FF, 1.4F, 3);
+			rune(config.chest.rune, RuneEffect.DUST, RuneShape.WINGS, 0xFF4FD8, 1.2F, 6);
+			config.chest.rune.length = 18;
+			rune(config.legs.rune, RuneEffect.RAINBOW, RuneShape.SPIRAL, 0xFFFFFF, 1.0F, 2);
+			rune(config.feet.rune, RuneEffect.FLAME, RuneShape.TRAIL, 0xFFFFFF, 1.0F, 2);
 		});
 		context.waitTicks(30);
 		context.takeScreenshot("23_runes_front");
@@ -506,8 +508,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		setCamera(context, CameraType.THIRD_PERSON_FRONT);
 
 		context.runOnClient(client -> {
-			rune(VanityClient.config().chest.rune, RuneEffect.SOUL_FLAME, RuneShape.ORBIT, 0xFFFFFF, 1.0F, 10);
-			rune(VanityClient.config().head.rune, RuneEffect.LIGHTNING, RuneShape.HALO, 0xFFFFFF, 1.0F, 8);
+			rune(VanityClient.config().chest.rune, RuneEffect.SOUL_FLAME, RuneShape.ORBIT, 0xFFFFFF, 1.0F, 4);
+			rune(VanityClient.config().head.rune, RuneEffect.LIGHTNING, RuneShape.HALO, 0xFFFFFF, 1.0F, 3);
+			VanityClient.config().legs.rune.enabled = false;
 		});
 		context.waitTicks(30);
 		context.takeScreenshot("25_runes_orbit_lightning");

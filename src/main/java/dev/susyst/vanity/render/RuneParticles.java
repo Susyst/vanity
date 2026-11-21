@@ -2,6 +2,7 @@ package dev.susyst.vanity.render;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.Particle;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
@@ -19,7 +20,8 @@ import dev.susyst.vanity.config.VanityConfig;
 
 /**
  * Armor runes: particles around your armor every tick, in shapes (halo, orbit rings, spiral, wings, aura, trail).
- * Spawned client-side, so only you see them, and as always-visible particles so they show even on low particle settings.
+ * Spawned client-side straight into the particle engine, so only you see them, they show even on low particle
+ * settings, and each particle's lifetime is set by the rune's length so the shape stays crisp.
  */
 public final class RuneParticles {
 	private static final RandomSource RANDOM = RandomSource.create();
@@ -42,7 +44,7 @@ public final class RuneParticles {
 			Rune rune = settings.rune;
 			if (!rune.enabled) continue;
 			if (settings.onlyWhenWorn && player.getItemBySlot(slot.equipmentSlot).isEmpty()) continue;
-			spawn(level, player, slot, rune);
+			spawn(client, player, slot, rune);
 		}
 	}
 
@@ -77,7 +79,7 @@ public final class RuneParticles {
 		};
 	}
 
-	private static void spawn(ClientLevel level, LocalPlayer player, CosmeticSlot slot, Rune rune) {
+	private static void spawn(Minecraft client, LocalPlayer player, CosmeticSlot slot, Rune rune) {
 		float time = player.tickCount * rune.speed;
 		double height = player.getBbHeight();
 		double yaw = Math.toRadians(player.yBodyRot);
@@ -106,8 +108,8 @@ public final class RuneParticles {
 					// Two tilted rings spinning in opposite directions around the chest
 					boolean second = k % 2 == 1;
 					double a = (second ? -time : time) * 0.13 + Math.PI * 2 * k / count;
-					double x = Math.cos(a) * 0.78;
-					double z = Math.sin(a) * 0.78;
+					double x = Math.cos(a) * 0.85;
+					double z = Math.sin(a) * 0.85;
 					double tilt = second ? -0.45 : 0.45;
 					side = second ? x * Math.cos(tilt) : x;
 					forward = second ? z : z * Math.cos(tilt);
@@ -173,7 +175,8 @@ public final class RuneParticles {
 				vz = 0;
 			}
 
-			level.addAlwaysVisibleParticle(particle(rune, time), x, y, z, vx, vy, vz);
+			Particle particle = client.particleEngine.createParticle(particle(rune, time), x, y, z, vx, vy, vz);
+			if (particle != null) particle.setLifetime(rune.length);
 		}
 	}
 }

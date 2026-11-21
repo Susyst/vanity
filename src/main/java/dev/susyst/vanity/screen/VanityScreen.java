@@ -422,9 +422,16 @@ public final class VanityScreen extends Screen {
 		this.button(Page.RUNE, this.panelX + this.panelW - arrowW, r0, arrowW, ">", () -> this.pickRuneEffect(1));
 		this.sync(() -> effect.setMessage(Component.literal(this.rune().effect.label)));
 
+		int resetW = 50;
+		int shapeLabelW = this.panelW - resetW - 2 * arrowW - 3 * GAP;
 		this.button(Page.RUNE, this.panelX, r1, arrowW, "<", () -> this.pickRuneShape(-1));
-		GlassButton shape = this.button(Page.RUNE, this.panelX + arrowW + GAP, r1, labelW, "", () -> this.pickRuneShape(1));
-		this.button(Page.RUNE, this.panelX + this.panelW - arrowW, r1, arrowW, ">", () -> this.pickRuneShape(1));
+		GlassButton shape = this.button(Page.RUNE, this.panelX + arrowW + GAP, r1, shapeLabelW, "", () -> this.pickRuneShape(1));
+		this.button(Page.RUNE, this.panelX + arrowW + GAP + shapeLabelW + GAP, r1, arrowW, ">", () -> this.pickRuneShape(1));
+		this.button(Page.RUNE, this.panelX + this.panelW - resetW, r1, resetW, "Reset", () -> {
+			boolean wasOn = this.rune().enabled;
+			this.current().rune = new Rune();
+			this.current().rune.enabled = wasOn;
+		});
 		this.sync(() -> shape.setMessage(Component.literal("Shape: " + this.rune().shapeFor(this.selected).label)));
 
 		IntConsumer setRuneColor = color -> {
@@ -434,15 +441,11 @@ public final class VanityScreen extends Screen {
 			if (!rune.effect.colorable) rune.effect = dev.susyst.vanity.config.RuneEffect.DUST;
 		};
 		this.colorRow(Page.RUNE, r2, () -> this.rune().effect.colorable ? this.rune().color : -1, setRuneColor);
-		this.slider(Page.RUNE, this.panelX, r3, thirdW, "Size", 0.5, 4.0, 0.25, "%.2f", s -> s.rune.size, (s, v) -> s.rune.size = v);
-		this.slider(Page.RUNE, x2, r3, thirdW, "Amount", 1, 12, 1, "%.0f", s -> s.rune.amount, (s, v) -> s.rune.amount = Math.round(v));
-		this.slider(Page.RUNE, x3, r3, thirdW, "Speed", 0.25, 3.0, 0.25, "%.2f", s -> s.rune.speed, (s, v) -> s.rune.speed = v);
+		this.slider(Page.RUNE, this.panelX, r3, thirdW, "Size", 0.5, 3.0, 0.1, "%.1f", s -> s.rune.size, (s, v) -> s.rune.size = v);
+		this.slider(Page.RUNE, x2, r3, thirdW, "Amount", 1, 8, 1, "%.0f", s -> s.rune.amount, (s, v) -> s.rune.amount = Math.round(v));
+		this.slider(Page.RUNE, x3, r3, thirdW, "Length", 4, 40, 1, "%.0f", s -> s.rune.length, (s, v) -> s.rune.length = Math.round(v));
 		this.hexBox(Page.RUNE, this.panelX, r4, thirdW, () -> this.rune().color, setRuneColor);
-		this.button(Page.RUNE, x2, r4, thirdW, "Reset", () -> {
-			boolean wasOn = this.rune().enabled;
-			this.current().rune = new Rune();
-			this.current().rune.enabled = wasOn;
-		});
+		this.slider(Page.RUNE, x2, r4, thirdW, "Speed", 0.25, 3.0, 0.25, "%.2f", s -> s.rune.speed, (s, v) -> s.rune.speed = v);
 		GlassButton firstPerson = this.button(Page.RUNE, x3, r4, thirdW, "", () -> config().runesInFirstPerson = !config().runesInFirstPerson);
 		firstPerson.setTooltip(tip("Also show runes in first person (they can get in your way)"));
 		this.sync(() -> firstPerson.setMessage(Component.literal("1st person: " + onOff(config().runesInFirstPerson))));
