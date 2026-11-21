@@ -35,6 +35,9 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 
 import dev.susyst.vanity.VanityClient;
+import dev.susyst.vanity.config.DyeAnimation;
+import dev.susyst.vanity.config.RuneReaction;
+import dev.susyst.vanity.render.RuneParticles;
 import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.FitMode;
 import dev.susyst.vanity.config.GlintMode;
@@ -151,6 +154,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testArmorOptions(context, singleplayer);
 			testTrimsAndDesigns(context, singleplayer);
 			testGlowOpacityRunes(context, singleplayer);
+			testAnimatedDye(context);
+			testOutfits(context);
+			testReactiveRunes(context, singleplayer);
 		}
 	}
 
@@ -566,6 +572,156 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.setScreen(() -> new VanityScreen(CosmeticSlot.LEGS, VanityScreen.Page.STYLE));
 		context.waitTicks(10);
 		context.takeScreenshot("27_wardrobe_style_glow_opacity");
+		context.setScreen(() -> null);
+	}
+
+	/** Leather looks with rainbow, pulse and shimmer dye: the color must move over time. */
+	private static void testAnimatedDye(ClientGameTestContext context) {
+		setCosmetics(context, FitMode.STRETCH, "minecraft:leather_helmet", "minecraft:leather_chestplate", "minecraft:leather_leggings", "minecraft:leather_boots");
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				SlotSettings settings = config.get(slot);
+				settings.rune.enabled = false;
+				settings.customDye = true;
+			}
+
+			config.head.dyeColor = 0xFF4FD8;
+			config.head.dyeAnimation = DyeAnimation.SHIMMER;
+			config.chest.dyeAnimation = DyeAnimation.RAINBOW;
+			config.chest.dyeSpeed = 2.0F;
+			config.legs.dyeColor = 0x3366FF;
+			config.legs.dyeAnimation = DyeAnimation.PULSE;
+			config.feet.dyeAnimation = DyeAnimation.RAINBOW;
+
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				SlotSettings settings = config.get(slot);
+				check(settings.dyeColorNow(0L) != settings.dyeColorNow(700L), slot.label + " dye should change over time with " + settings.dyeAnimation);
+			}
+
+			ItemStack real = client.player.getItemBySlot(EquipmentSlot.CHEST);
+			ItemStack early = VanityCosmetics.styled(config.chest.stack(), real, config.chest);
+			check(early.get(DataComponents.DYED_COLOR) != null, "Rainbow chestplate should be dyed");
+		});
+		context.waitTicks(10);
+		context.takeScreenshot("28a_animated_dye");
+		int before = context.computeOnClient(client -> drawnArmor(client, EquipmentSlot.CHEST).get(DataComponents.DYED_COLOR).rgb());
+		context.waitTicks(25);
+		context.takeScreenshot("28b_animated_dye_later");
+		int after = context.computeOnClient(client -> drawnArmor(client, EquipmentSlot.CHEST).get(DataComponents.DYED_COLOR).rgb());
+		check(before != after, "The drawn rainbow chestplate should change color, stayed #" + Integer.toHexString(before));
+
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.STYLE));
+		context.waitTicks(10);
+		context.takeScreenshot("28c_wardrobe_dye_animation");
+		context.setScreen(() -> null);
+	}
+
+	/** Save two outfits in the wardrobe, then switch between them with the Next outfit key. */
+	private static void testOutfits(ClientGameTestContext context) {
+		context.runOnClient(client -> {
+			VanityClient.config().outfits.clear();
+			VanityClient.config().outfit = -1;
+		});
+
+		// Outfit 1: the animated leather from before
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.HEAD, VanityScreen.Page.OUTFITS));
+		context.waitTicks(5);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Save new"));
+		context.waitTicks(2);
+		context.runOnClient(client -> VanityClient.config().outfits.get(0).name = "Rainbow leather");
+		context.setScreen(() -> null);
+
+		// Outfit 2: full netherite with a gold trim
+		setCosmetics(context, FitMode.STRETCH, "minecraft:netherite_helmet", "minecraft:netherite_chestplate", "minecraft:netherite_leggings", "minecraft:netherite_boots");
+		context.runOnClient(client -> {
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				SlotSettings settings = VanityClient.config().get(slot);
+				settings.trim = TrimMode.PICK;
+				settings.trimPattern = "minecraft:rib";
+				settings.trimMaterial = "minecraft:gold";
+			}
+		});
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.HEAD, VanityScreen.Page.OUTFITS));
+		context.waitTicks(5);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Save new"));
+		context.waitTicks(2);
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			check(config.outfits.size() == 2, "Two outfits should be saved, got " + config.outfits.size());
+			config.outfits.get(1).name = "Netherite gold";
+			check(config.outfit == 1, "The new outfit should be picked");
+		});
+		context.waitTicks(2);
+		context.takeScreenshot("29a_wardrobe_outfits_page");
+		context.setScreen(() -> null);
+
+		// Next outfit key wraps around to the first outfit
+		context.runOnClient(client -> {
+			if (client.gui.hud.isHidden()) client.gui.hud.toggle();
+		});
+		context.getInput().pressKey(VanityClient.nextOutfitKey());
+		context.waitTicks(5);
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			check(config.outfit == 0, "Next outfit should wrap to the first, got " + config.outfit);
+			check(config.chest.item.equals("minecraft:leather_chestplate") && config.chest.dyeAnimation == DyeAnimation.RAINBOW,
+					"Wearing the first outfit should bring back the rainbow leather, got " + config.chest.item);
+		});
+		context.takeScreenshot("29b_outfit_switched_with_key");
+		context.getInput().pressKey(VanityClient.nextOutfitKey());
+		context.waitTicks(5);
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			check(config.outfit == 1 && config.chest.item.equals("minecraft:netherite_chestplate"), "Next outfit should switch to netherite, got " + config.chest.item);
+			check(hasTrim(drawnArmor(client, EquipmentSlot.CHEST), "minecraft:rib", "minecraft:gold"), "The netherite outfit's trim should come back too");
+		});
+		context.takeScreenshot("29c_second_outfit");
+		cleanView(context);
+	}
+
+	/** A burst of rune particles when you get hit, and denser runes while sprinting. */
+	private static void testReactiveRunes(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			rune(config.head.rune, RuneEffect.DUST, RuneShape.HALO, 0x5BD2FF, 1.2F, 16);
+			rune(config.chest.rune, RuneEffect.RAINBOW, RuneShape.ORBIT, 0xFFFFFF, 1.0F, 20);
+			rune(config.legs.rune, RuneEffect.SOUL_FLAME, RuneShape.SPIRAL, 0xFFFFFF, 1.0F, 16);
+			rune(config.feet.rune, RuneEffect.FLAME, RuneShape.TRAIL, 0xFFFFFF, 1.0F, 14);
+
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				check(config.get(slot).rune.react == RuneReaction.BOTH, "Runes should react to hits and sprinting by default");
+			}
+
+			RuneParticles.lastBurstParticles = 0;
+		});
+		context.waitTicks(30);
+		context.takeScreenshot("30a_runes_before_hit");
+
+		singleplayer.getServer().runCommand("gamemode survival @a");
+		singleplayer.getServer().runCommand("damage @a 1 minecraft:generic");
+		context.waitTicks(4);
+		context.takeScreenshot("30b_rune_hit_burst");
+		context.runOnClient(client -> check(RuneParticles.lastBurstParticles >= 40, "Getting hit should make a rune burst, got " + RuneParticles.lastBurstParticles + " particles"));
+		singleplayer.getServer().runCommand("gamemode creative @a");
+		singleplayer.getServer().runCommand("effect give @a minecraft:instant_health 1 5 true");
+
+		// Sprint toward the camera
+		context.waitTicks(20);
+		context.getInput().holdKey(options -> options.keyUp);
+		context.getInput().holdKey(options -> options.keySprint);
+		context.waitTicks(14);
+		boolean sprinting = context.computeOnClient(client -> client.player.isSprinting());
+		context.takeScreenshot("30c_runes_sprinting");
+		context.getInput().releaseKey(options -> options.keySprint);
+		context.getInput().releaseKey(options -> options.keyUp);
+		check(sprinting, "The player should be sprinting for the sprint rune screenshot");
+		context.waitTicks(20);
+
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.RUNE));
+		context.waitTicks(10);
+		context.takeScreenshot("30d_wardrobe_rune_react");
 		context.setScreen(() -> null);
 	}
 

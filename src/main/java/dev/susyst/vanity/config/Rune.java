@@ -16,6 +16,8 @@ public final class Rune {
 	public int length = 12;
 	/** Animation speed. */
 	public float speed = 1.0F;
+	/** Burst when you get hit, and/or stronger while sprinting. */
+	public RuneReaction react = RuneReaction.BOTH;
 
 	public RuneShape shapeFor(CosmeticSlot slot) {
 		return this.shape != null ? this.shape : RuneShape.defaultFor(slot);
@@ -31,11 +33,13 @@ public final class Rune {
 		copy.detail = this.detail;
 		copy.length = this.length;
 		copy.speed = this.speed;
+		copy.react = this.react;
 		return copy;
 	}
 
 	void sanitize() {
 		if (this.effect == null) this.effect = RuneEffect.DUST;
+		if (this.react == null) this.react = RuneReaction.BOTH;
 		this.color &= 0xFFFFFF;
 		if (!Float.isFinite(this.size)) this.size = 1.2F;
 		this.size = Math.max(0.5F, Math.min(3.0F, this.size));

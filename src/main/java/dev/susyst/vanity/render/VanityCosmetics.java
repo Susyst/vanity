@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.DyedItemColor;
+import net.minecraft.util.Util;
 import net.minecraft.world.item.equipment.EquipmentAssets;
 import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.item.equipment.trim.ArmorTrim;
@@ -229,7 +230,7 @@ public final class VanityCosmetics {
 		}
 
 		if (settings.customDye && isDyeable(copy)) {
-			copy.set(DataComponents.DYED_COLOR, new DyedItemColor(settings.dyeColor & 0xFFFFFF));
+			copy.set(DataComponents.DYED_COLOR, new DyedItemColor(settings.dyeColorNow(Util.getMillis())));
 		}
 
 		return copy;

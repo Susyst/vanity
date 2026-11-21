@@ -30,6 +30,14 @@ import dev.susyst.vanity.config.VanityConfig;
 public final class RuneParticles {
 	private static final RandomSource RANDOM = RandomSource.create();
 	private static final double GOLDEN_ANGLE = 2.399963;
+	/** Particles in a hit burst, per piece. */
+	private static final int BURST_POINTS = 28;
+
+	private static int lastHurtTime;
+	/** Animation time per piece; runs faster while sprinting without jumping. */
+	private static final float[] PHASE = new float[CosmeticSlot.values().length];
+	/** How many particles the last hit burst made (for tests). */
+	public static int lastBurstParticles;
 
 	private RuneParticles() {
 	}
@@ -43,19 +51,69 @@ public final class RuneParticles {
 		if (!config.enabled) return;
 		if (!config.runesInFirstPerson && client.options.getCameraType().isFirstPerson()) return;
 
+		// hurtTime jumps up to hurtDuration the tick you take damage, then counts down
+		boolean hit = player.hurtTime > lastHurtTime;
+		lastHurtTime = player.hurtTime;
+		int burst = 0;
+
 		for (CosmeticSlot slot : CosmeticSlot.values()) {
 			SlotSettings settings = config.get(slot);
 			Rune rune = settings.rune;
 			if (!rune.enabled) continue;
 			if (settings.onlyWhenWorn && player.getItemBySlot(slot.equipmentSlot).isEmpty()) continue;
 			spawn(client, player, slot, rune);
+			if (hit && rune.react.hit) burst += burst(client, player, slot, rune);
 		}
+
+		if (hit) lastBurstParticles = burst;
 	}
 
-	private static ParticleOptions particle(Rune rune, float time, int point, int points) {
+	/** Height of a piece's middle, as a share of the player's height. */
+	private static double pieceHeight(CosmeticSlot slot) {
+		return switch (slot) {
+			case HEAD -> 0.85;
+			case CHEST -> 0.6;
+			case LEGS -> 0.35;
+			case FEET -> 0.08;
+		};
+	}
+
+	/** A ring-and-sphere of the rune's particles flying out from the piece. */
+	private static int burst(Minecraft client, LocalPlayer player, CosmeticSlot slot, Rune rune) {
+		double cx = player.getX();
+		double cy = player.getY() + player.getBbHeight() * pieceHeight(slot);
+		double cz = player.getZ();
+		float time = player.tickCount * rune.speed;
+		int made = 0;
+
+		for (int k = 0; k < BURST_POINTS; k++) {
+			// Evenly spread directions on a sphere, flattened a little so it reads as a ring
+			double y = 1.0 - 2.0 * (k + 0.5) / BURST_POINTS;
+			double r = Math.sqrt(1.0 - y * y);
+			double a = k * GOLDEN_ANGLE;
+			double speed = 0.28 * (0.8 + 0.4 * RANDOM.nextDouble());
+			double vx = Math.cos(a) * r * speed;
+			double vy = y * speed * 0.55;
+			double vz = Math.sin(a) * r * speed;
+
+			Particle particle = client.particleEngine.createParticle(particle(rune, time, k, BURST_POINTS, 1.35F), cx + vx, cy + vy, cz + vz, 0, 0, 0);
+
+			if (particle != null) {
+				particle.setParticleSpeed(vx, vy, vz);
+				particle.setLifetime(12 + RANDOM.nextInt(6));
+				made++;
+			}
+		}
+
+		return made;
+	}
+
+	private static ParticleOptions particle(Rune rune, float time, int point, int points, float sizeScale) {
+		float size = Math.min(4.0F, rune.size * sizeScale);
+
 		return switch (rune.effect) {
-			case DUST -> new DustParticleOptions(rune.color, rune.size);
-			case RAINBOW -> new DustParticleOptions(Mth.hsvToRgb((time * 0.008F + (float) point / points) % 1.0F, 0.85F, 1.0F), rune.size);
+			case DUST -> new DustParticleOptions(rune.color, size);
+			case RAINBOW -> new DustParticleOptions(Mth.hsvToRgb((time * 0.008F + (float) point / points) % 1.0F, 0.85F, 1.0F), size);
 			case FLAME -> ParticleTypes.FLAME;
 			case SOUL_FLAME -> ParticleTypes.SOUL_FIRE_FLAME;
 			case COPPER_FLAME -> ParticleTypes.COPPER_FIRE_FLAME;
@@ -130,7 +188,9 @@ public final class RuneParticles {
 
 	private static void spawn(Minecraft client, LocalPlayer player, CosmeticSlot slot, Rune rune) {
 		int tick = player.tickCount;
-		float time = tick * rune.speed;
+		// Sprinting: twice as dense, bigger and faster
+		boolean boosted = rune.react.sprint && player.isSprinting();
+		float time = PHASE[slot.ordinal()] += rune.speed * (boosted ? 1.6F : 1.0F);
 		double height = player.getBbHeight();
 		double yaw = Math.toRadians(player.yBodyRot);
 		double fx = -Math.sin(yaw);
@@ -139,7 +199,7 @@ public final class RuneParticles {
 		double rz = fx;
 		RuneShape shape = rune.shapeFor(slot);
 		int points = rune.detail;
-		int length = rune.length;
+		int length = boosted ? Math.max(3, rune.length / 2) : rune.length;
 		boolean moving = player.getDeltaMovement().horizontalDistance() > 0.03;
 
 		for (int k = 0; k < points; k++) {
@@ -165,10 +225,11 @@ public final class RuneParticles {
 			// Note particles use the x speed as their color
 			if (rune.effect == RuneEffect.MUSIC) vx = (double) k / points;
 
-			Particle particle = client.particleEngine.createParticle(particle(rune, time, k, points), x, y, z, vx, vy, vz);
+			Particle particle = client.particleEngine.createParticle(particle(rune, time, k, points, boosted ? 1.3F : 1.0F), x, y, z, vx, vy, vz);
 
 			if (particle != null) {
-				particle.setLifetime(length + 2);
+				// Boosted points are redrawn twice as often but last as long, so the shape is twice as dense
+				particle.setLifetime(rune.length + 2);
 			}
 		}
 	}

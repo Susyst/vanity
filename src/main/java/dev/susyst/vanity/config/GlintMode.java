@@ -3,7 +3,7 @@ package dev.susyst.vanity.config;
 /** Enchantment shine on an armor look. */
 public enum GlintMode {
 	/** Shine if the armor you're really wearing is enchanted. */
-	AUTO("Like real"),
+	AUTO("Real"),
 	ON("On"),
 	OFF("Off");
 

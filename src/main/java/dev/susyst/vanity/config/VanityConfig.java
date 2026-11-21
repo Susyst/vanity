@@ -6,6 +6,8 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 import com.google.gson.Gson;
@@ -39,6 +41,12 @@ public final class VanityConfig {
 	public SlotSettings chest = new SlotSettings();
 	public SlotSettings legs = new SlotSettings();
 	public SlotSettings feet = new SlotSettings();
+	/** Saved outfits, switched with the Next outfit key. */
+	public List<Outfit> outfits = new ArrayList<>();
+	/** Index of the outfit worn or saved last, or -1. */
+	public int outfit = -1;
+
+	public static final int MAX_OUTFITS = 12;
 
 	public SlotSettings get(CosmeticSlot slot) {
 		return switch (slot) {
@@ -47,6 +55,28 @@ public final class VanityConfig {
 			case LEGS -> this.legs;
 			case FEET -> this.feet;
 		};
+	}
+
+	/** The outfit worn or saved last, or null. */
+	public Outfit currentOutfit() {
+		return this.outfit >= 0 && this.outfit < this.outfits.size() ? this.outfits.get(this.outfit) : null;
+	}
+
+	/** Wears the outfit at {@code index}. */
+	public Outfit wearOutfit(int index) {
+		if (index < 0 || index >= this.outfits.size()) return null;
+		this.outfit = index;
+		Outfit outfit = this.outfits.get(index);
+		outfit.wear(this);
+		return outfit;
+	}
+
+	/** Wears the next (+1) or previous (-1) outfit, wrapping around. Null if none are saved. */
+	public Outfit wearNextOutfit(int direction) {
+		int count = this.outfits.size();
+		if (count == 0) return null;
+		int index = this.outfit < 0 ? (direction > 0 ? 0 : count - 1) : Math.floorMod(this.outfit + direction, count);
+		return this.wearOutfit(index);
 	}
 
 	private static Path path() {
@@ -96,6 +126,12 @@ public final class VanityConfig {
 		for (CosmeticSlot slot : CosmeticSlot.values()) {
 			this.get(slot).sanitize();
 		}
+
+		if (this.outfits == null) this.outfits = new ArrayList<>();
+		this.outfits.removeIf(java.util.Objects::isNull);
+		while (this.outfits.size() > MAX_OUTFITS) this.outfits.removeLast();
+		for (Outfit outfit : this.outfits) outfit.sanitize();
+		if (this.outfit >= this.outfits.size()) this.outfit = -1;
 	}
 
 	/** The current world's registries, needed to read exact saved items. Null when not in a world. */

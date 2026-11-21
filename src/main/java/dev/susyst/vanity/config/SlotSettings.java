@@ -36,6 +36,10 @@ public final class SlotSettings {
 	public boolean customDye;
 	/** RGB dye color, default is undyed leather. */
 	public int dyeColor = 0xA06540;
+	/** How the dye color moves: solid, rainbow, pulse or shimmer. */
+	public DyeAnimation dyeAnimation = DyeAnimation.SOLID;
+	/** Speed of {@link #dyeAnimation}, 0.25 to 4. */
+	public float dyeSpeed = 1.0F;
 	/** Armor opacity, 0.1 (ghostly) to 1 (solid). */
 	public float opacity = 1.0F;
 	/** How much the armor glows in the dark, 0 to 1. */
@@ -120,6 +124,11 @@ public final class SlotSettings {
 		return layers;
 	}
 
+	/** The dye color to show now, with its animation applied. */
+	public int dyeColorNow(long millis) {
+		return this.dyeAnimation.color(this.dyeColor, this.dyeSpeed, millis);
+	}
+
 	/** True if glint, dye or trim change anything, so even your real armor gets restyled. */
 	public boolean hasStyleOverrides() {
 		return this.glint != GlintMode.AUTO || this.customDye || this.trim != TrimMode.REAL;
@@ -139,6 +148,8 @@ public final class SlotSettings {
 		this.glint = GlintMode.AUTO;
 		this.customDye = false;
 		this.dyeColor = 0xA06540;
+		this.dyeAnimation = DyeAnimation.SOLID;
+		this.dyeSpeed = 1.0F;
 		this.opacity = 1.0F;
 		this.glow = 0.0F;
 		this.trimGlowAmount = 0.0F;
@@ -170,6 +181,8 @@ public final class SlotSettings {
 		this.glint = other.glint;
 		this.customDye = other.customDye;
 		this.dyeColor = other.dyeColor;
+		this.dyeAnimation = other.dyeAnimation;
+		this.dyeSpeed = other.dyeSpeed;
 		this.opacity = other.opacity;
 		this.glow = other.glow;
 		this.trimGlowAmount = other.trimGlowAmount;
@@ -210,6 +223,8 @@ public final class SlotSettings {
 		copy.copyDesignFrom(this);
 		copy.customDye = this.customDye;
 		copy.dyeColor = this.dyeColor;
+		copy.dyeAnimation = this.dyeAnimation;
+		copy.dyeSpeed = this.dyeSpeed;
 		copy.opacity = this.opacity;
 		copy.glow = this.glow;
 		copy.trimGlowAmount = this.trimGlowAmount;
@@ -251,6 +266,9 @@ public final class SlotSettings {
 			this.design[i].sanitize();
 		}
 		this.dyeColor &= 0xFFFFFF;
+		if (this.dyeAnimation == null) this.dyeAnimation = DyeAnimation.SOLID;
+		if (!Float.isFinite(this.dyeSpeed)) this.dyeSpeed = 1.0F;
+		this.dyeSpeed = Math.max(0.25F, Math.min(4.0F, this.dyeSpeed));
 		if (!Float.isFinite(this.opacity)) this.opacity = 1.0F;
 		this.opacity = Math.max(0.1F, Math.min(1.0F, this.opacity));
 		if (!Float.isFinite(this.glow)) this.glow = 0.0F;

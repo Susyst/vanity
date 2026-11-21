@@ -5,6 +5,7 @@ import org.lwjgl.sdl.SDLScancode;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.player.PlayerModel;
@@ -22,6 +23,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.LivingEntityRenderLayerRegist
 import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
 
 import dev.susyst.vanity.config.CosmeticSlot;
+import dev.susyst.vanity.config.Outfit;
 import dev.susyst.vanity.config.VanityConfig;
 import dev.susyst.vanity.render.RuneParticles;
 import dev.susyst.vanity.render.VanityCosmetics;
@@ -36,6 +38,8 @@ public final class VanityClient implements ClientModInitializer {
 	private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
 	private static VanityConfig config = new VanityConfig();
 	private static KeyMapping openKey;
+	private static KeyMapping nextOutfitKey;
+	private static KeyMapping previousOutfitKey;
 
 	/** Slim (Alex) player models have 3-pixel-wide arms. */
 	private static boolean isSlim(PlayerModel model) {
@@ -48,11 +52,40 @@ public final class VanityClient implements ClientModInitializer {
 		return config;
 	}
 
+	public static KeyMapping nextOutfitKey() {
+		return nextOutfitKey;
+	}
+
+	/** The key bound to Next outfit, as shown in Controls. */
+	public static String nextOutfitKeyName() {
+		return nextOutfitKey == null ? "N" : nextOutfitKey.getTranslatedKeyMessage().getString();
+	}
+
+	/** Wears the next or previous saved outfit and says which one above the hotbar. */
+	public static void switchOutfit(Minecraft client, int direction) {
+		if (client.player == null) return;
+		Outfit outfit = config.wearNextOutfit(direction);
+		Component message;
+
+		if (outfit == null) {
+			message = Component.literal("No saved outfits yet: press ").append(openKey.getTranslatedKeyMessage()).append(", then Outfits → Save new");
+		} else {
+			config.save();
+			message = Component.literal("Outfit: ").withColor(0x8FA3B8)
+					.append(Component.literal(outfit.name).withColor(0x5BD2FF))
+					.append(Component.literal("  (" + (config.outfit + 1) + "/" + config.outfits.size() + ")").withColor(0x8FA3B8));
+		}
+
+		client.gui.hud.setOverlayMessage(message, false);
+	}
+
 	@Override
 	public void onInitializeClient() {
 		config = VanityConfig.load();
 
 		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.open", InputConstants.Type.KEYBOARD, SDLScancode.SDL_SCANCODE_V, CATEGORY));
+		nextOutfitKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.next_outfit", InputConstants.Type.KEYBOARD, SDLScancode.SDL_SCANCODE_N, CATEGORY));
+		previousOutfitKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.previous_outfit", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), CATEGORY));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			RuneParticles.tick(client);
@@ -62,6 +95,9 @@ public final class VanityClient implements ClientModInitializer {
 					client.gui.setScreen(new VanityScreen());
 				}
 			}
+
+			while (nextOutfitKey.consumeClick()) switchOutfit(client, 1);
+			while (previousOutfitKey.consumeClick()) switchOutfit(client, -1);
 		});
 
 		// The real item keeps its name in tooltips; add a line saying what it looks like.

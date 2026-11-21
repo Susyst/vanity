@@ -1,6 +1,8 @@
 package dev.susyst.vanity.screen;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.locale.Language;
+import net.minecraft.network.chat.FormattedText;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -80,6 +82,15 @@ public final class GlassButton extends Button {
 		Component message = this.getMessage();
 		// Dark text on the accent color reads cleaner without the drop shadow.
 		boolean shadow = (textColor & 0xFFFFFF) != (DARK_TEXT & 0xFFFFFF);
+		int room = w - 6;
+
+		if (font.width(message) > room) {
+			// Too long for a narrow button: cut it with an ellipsis instead of spilling out
+			var cut = Language.getInstance().getVisualOrder(FormattedText.composite(font.substrByWidth(message, room - font.width("…")), FormattedText.of("…")));
+			g.text(font, cut, x + 3, y + (h - 8) / 2, textColor, shadow);
+			return;
+		}
+
 		g.text(font, message, x + (w - font.width(message)) / 2, y + (h - 8) / 2, textColor, shadow);
 	}
 }

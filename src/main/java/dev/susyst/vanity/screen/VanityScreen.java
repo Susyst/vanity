@@ -37,6 +37,9 @@ import dev.susyst.vanity.config.GlintMode;
 import dev.susyst.vanity.config.Rune;
 import dev.susyst.vanity.config.RuneEffect;
 import dev.susyst.vanity.config.RuneShape;
+import dev.susyst.vanity.config.DyeAnimation;
+import dev.susyst.vanity.config.Outfit;
+import dev.susyst.vanity.config.RuneReaction;
 import dev.susyst.vanity.config.SlotSettings;
 import dev.susyst.vanity.config.TrimLayer;
 import dev.susyst.vanity.config.TrimMode;
@@ -46,7 +49,7 @@ import dev.susyst.vanity.render.VanityCosmetics;
 
 /**
  * The wardrobe, in a frosted-glass style. Left: live preview. Right: pick a slot (or All), then a page:
- * Look, Style (glint, dye, opacity, glow), Trim, Design (custom trims) and Rune (particles).
+ * Look, Style (glint, dye, opacity, glow), Trim, Design (custom trims), Rune (particles) and Outfits.
  * Every choice with more than two options is a dropdown.
  */
 public final class VanityScreen extends Screen {
@@ -65,7 +68,8 @@ public final class VanityScreen extends Screen {
 		STYLE("Style"),
 		TRIM("Trim"),
 		DESIGN("Design"),
-		RUNE("Rune");
+		RUNE("Rune"),
+		OUTFITS("Outfits");
 
 		final String label;
 
@@ -104,6 +108,7 @@ public final class VanityScreen extends Screen {
 	private final List<Runnable> syncers = new ArrayList<>();
 
 	private EditBox itemBox;
+	private EditBox outfitNameBox;
 	private boolean syncing;
 	private boolean initialized;
 	private int previewRight;
@@ -182,6 +187,8 @@ public final class VanityScreen extends Screen {
 				case TRIM -> target.copyTrimFrom(source);
 				case DESIGN -> target.copyDesignFrom(source);
 				case RUNE -> target.rune = source.rune.copy();
+				case OUTFITS -> {
+				}
 			}
 		}
 	}
@@ -220,6 +227,10 @@ public final class VanityScreen extends Screen {
 
 	/** A dropdown: a button showing the current choice; clicking it opens a list of options. */
 	private GlassButton dropdown(Page page, int x, int y, int w, String title, Supplier<List<Option>> options, IntSupplier current, IntConsumer onPick) {
+		return this.dropdown(page, x, y, w, title, "Custom", options, current, onPick);
+	}
+
+	private GlassButton dropdown(Page page, int x, int y, int w, String title, String fallback, Supplier<List<Option>> options, IntSupplier current, IntConsumer onPick) {
 		GlassButton button = new GlassButton(x, y, w, ROW, Component.empty(), b -> {
 			List<Option> list = options.get();
 			this.menu = new Menu(x, y + ROW + 1, w, y, list, current.getAsInt(), index -> {
@@ -234,7 +245,7 @@ public final class VanityScreen extends Screen {
 		this.sync(() -> {
 			List<Option> list = options.get();
 			int index = current.getAsInt();
-			String value = index >= 0 && index < list.size() ? list.get(index).label() : "Custom";
+			String value = index >= 0 && index < list.size() ? list.get(index).label() : fallback;
 			MutableComponent label = Component.literal(title.isEmpty() ? value : title + ": " + value);
 			if (index >= 0 && index < list.size() && list.get(index).swatch() >= 0) label.append(" ").append(swatch(list.get(index).swatch()));
 			button.setMessage(label.append(Component.literal("  ▾").withColor(0x8FA3B8)));
@@ -357,6 +368,24 @@ public final class VanityScreen extends Screen {
 		return options;
 	}
 
+	private List<Option> dyeOptions() {
+		List<Option> options = new ArrayList<>();
+		options.add(Option.of("Off"));
+
+		for (DyeAnimation animation : DyeAnimation.values()) {
+			options.add(animation == DyeAnimation.SOLID ? new Option(animation.label, this.current().dyeColor) : Option.of(animation.label));
+		}
+
+		return options;
+	}
+
+	private List<Option> outfitOptions() {
+		List<Option> options = new ArrayList<>();
+		if (config().outfits.isEmpty()) options.add(Option.of("None saved"));
+		for (Outfit outfit : config().outfits) options.add(Option.of(outfit.name));
+		return options;
+	}
+
 	/** First option keeps each piece's own shape (halo on the head, orbit on the chest, ...). */
 	private List<Option> runeShapeOptions() {
 		List<Option> list = new ArrayList<>();
@@ -469,21 +498,21 @@ public final class VanityScreen extends Screen {
 		this.sync(() -> wornOnly.setMessage(Component.literal("No armor: " + (this.current().onlyWhenWorn ? "Hide" : "Show"))));
 
 		// ---- Style ----
-		this.dropdown(Page.STYLE, this.panelX, r0, halfW, "Glint", () -> enumOptions(GlintMode.values(), g -> g.label), () -> this.current().glint.ordinal(),
+		this.dropdown(Page.STYLE, this.panelX, r0, thirdW, "Glint", () -> enumOptions(GlintMode.values(), g -> g.label), () -> this.current().glint.ordinal(),
 				index -> this.current().glint = GlintMode.values()[index])
-				.setTooltip(tip("Enchantment shine. Like real: shine if the armor you're wearing is enchanted."));
+				.setTooltip(tip("Enchantment shine. Real: shine if the armor you're wearing is enchanted."));
 
-		GlassButton dye = this.button(Page.STYLE, this.panelX + halfW + GAP, r0, halfW, "", () -> this.current().customDye = !this.current().customDye);
-		dye.setTooltip(tip("Recolor leather armor with a color below"));
-		this.sync(() -> {
-			MutableComponent label = Component.literal("Dye: " + onOff(this.current().customDye));
-			if (this.current().customDye) label.append(" ").append(swatch(this.current().dyeColor));
-			dye.setMessage(label);
-		});
+		this.dropdown(Page.STYLE, x2, r0, thirdW, "Dye", this::dyeOptions, () -> this.current().customDye ? this.current().dyeAnimation.ordinal() + 1 : 0, index -> {
+			this.current().customDye = index > 0;
+			if (index > 0) this.current().dyeAnimation = DyeAnimation.values()[index - 1];
+		}).setTooltip(tip("Recolor leather looks. Solid: the color below. Rainbow cycles every color; Pulse and Shimmer animate the color below."));
+		this.slider(Page.STYLE, x3, r0, thirdW, "Speed", 0.25, 4.0, 0.25, "%.2fx", s -> s.dyeSpeed, (s, v) -> s.dyeSpeed = v);
 
 		IntConsumer setDye = color -> {
 			this.current().dyeColor = color;
 			this.current().customDye = true;
+			// Rainbow ignores the color, so picking one means you want that color
+			if (this.current().dyeAnimation == DyeAnimation.RAINBOW) this.current().dyeAnimation = DyeAnimation.SOLID;
 		};
 		this.colorRow(Page.STYLE, r1, () -> this.current().customDye ? this.current().dyeColor : -1, setDye);
 		this.colorSliders(Page.STYLE, r2, thirdW, () -> this.current().dyeColor, setDye);
@@ -570,14 +599,73 @@ public final class VanityScreen extends Screen {
 		GlassButton firstPerson = this.button(Page.RUNE, x3, r3, thirdW, "", () -> config().runesInFirstPerson = !config().runesInFirstPerson);
 		firstPerson.setTooltip(tip("Also show runes in first person (they can get in your way)"));
 		this.sync(() -> firstPerson.setMessage(Component.literal("1st person: " + onOff(config().runesInFirstPerson))));
-		this.button(Page.RUNE, this.panelX, r4, halfW, "Reset", () -> {
+		this.button(Page.RUNE, this.panelX, r4, thirdW, "Reset", () -> {
 			boolean wasOn = this.rune().enabled;
 			RuneEffect effect = this.rune().effect;
 			this.current().rune = new Rune();
 			this.current().rune.enabled = wasOn;
 			this.current().rune.effect = effect;
 		}).setTooltip(tip("Reset shape, color and sliders"));
-		this.copyToAllButton(Page.RUNE, this.panelX + halfW + GAP, r4, halfW, "rune", s -> s.rune = this.rune().copy());
+		this.dropdown(Page.RUNE, x2, r4, thirdW, "React", () -> enumOptions(RuneReaction.values(), r -> r.label), () -> this.rune().react.ordinal(),
+				index -> this.rune().react = RuneReaction.values()[index])
+				.setTooltip(tip("Hit: a burst when you take damage. Sprint: twice as dense, bigger and faster while sprinting."));
+		this.copyToAllButton(Page.RUNE, x3, r4, thirdW, "rune", s -> s.rune = this.rune().copy());
+
+		// ---- Outfits ----
+		this.dropdown(Page.OUTFITS, this.panelX, r0, this.panelW, "Outfit", "Not saved", this::outfitOptions,
+				() -> config().outfits.isEmpty() ? 0 : config().outfit, index -> {
+			if (!config().outfits.isEmpty()) config().wearOutfit(index);
+			this.syncItemBox();
+		}).setTooltip(tip("Pick an outfit to wear it"));
+
+		this.outfitNameBox = this.on(Page.OUTFITS, new GlassEditBox(this.font, this.panelX, r1, this.panelW, ROW, Component.literal("Outfit name")));
+		this.outfitNameBox.setMaxLength(32);
+		this.outfitNameBox.setHint(Component.literal("Outfit name"));
+		this.outfitNameBox.setResponder(text -> {
+			if (this.syncing) return;
+			Outfit outfit = config().currentOutfit();
+			if (outfit != null && !text.isBlank()) outfit.name = text.trim();
+		});
+		this.sync(() -> {
+			Outfit outfit = config().currentOutfit();
+			this.outfitNameBox.active = outfit != null;
+			if (!this.outfitNameBox.isFocused()) this.outfitNameBox.setValue(outfit != null ? outfit.name : "");
+		});
+
+		GlassButton saveNew = this.button(Page.OUTFITS, this.panelX, r2, thirdW, "Save new", () -> {
+			if (config().outfits.size() >= VanityConfig.MAX_OUTFITS) return;
+			config().outfits.add(Outfit.capture("Outfit " + (config().outfits.size() + 1), config()));
+			config().outfit = config().outfits.size() - 1;
+		});
+		saveNew.setTooltip(tip("Save everything you're showing now (all four slots) as a new outfit"));
+		this.sync(() -> saveNew.active = config().outfits.size() < VanityConfig.MAX_OUTFITS);
+
+		GlassButton update = this.button(Page.OUTFITS, x2, r2, thirdW, "Update", () -> {
+			Outfit outfit = config().currentOutfit();
+			if (outfit != null) outfit.copyFrom(config());
+		});
+		update.setTooltip(tip("Save your current look over the picked outfit"));
+
+		GlassButton delete = this.button(Page.OUTFITS, x3, r2, thirdW, "Delete", () -> {
+			if (config().currentOutfit() == null) return;
+			config().outfits.remove(config().outfit);
+			config().outfit = config().outfits.isEmpty() ? -1 : Math.min(config().outfit, config().outfits.size() - 1);
+		});
+		delete.setTooltip(tip("Delete the picked outfit (your current look stays)"));
+		this.sync(() -> {
+			update.active = config().currentOutfit() != null;
+			delete.active = config().currentOutfit() != null;
+		});
+
+		this.button(Page.OUTFITS, this.panelX, r3, halfW, "◀ Previous", () -> {
+			config().wearNextOutfit(-1);
+			this.syncItemBox();
+		});
+		this.button(Page.OUTFITS, this.panelX + halfW + GAP, r3, halfW, "Next ▶", () -> {
+			config().wearNextOutfit(1);
+			this.syncItemBox();
+		});
+		this.hintY.put(Page.OUTFITS, r4 + 2);
 
 		// ---- Bottom row ----
 		int bottomY = this.height - 36;
@@ -845,10 +933,11 @@ public final class VanityScreen extends Screen {
 
 		switch (this.page) {
 			case LOOK -> this.lookStatus(graphics, this.current());
-			case STYLE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Also styles your real armor when no look is set.");
+			case STYLE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Dye works on leather looks. Also styles your real armor.");
 			case TRIM -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Also on inventory icons. Texture packs apply.");
 			case DESIGN -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Up to 3 patterns in any color, over your armor.");
 			case RUNE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Particles only you see. Press F5 to look at them.");
+			case OUTFITS -> this.hint(graphics, "Saves all four slots. Press " + VanityClient.nextOutfitKeyName() + " in game to switch outfits.");
 		}
 
 		LocalPlayer player = this.minecraft.player;
