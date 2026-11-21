@@ -700,7 +700,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.takeScreenshot("30a_runes_before_hit");
 
 		singleplayer.getServer().runCommand("gamemode survival @a");
-		singleplayer.getServer().runCommand("damage @a 1 minecraft:generic");
+		singleplayer.getServer().runCommand("damage @p 2 minecraft:generic");
 		context.waitTicks(4);
 		context.takeScreenshot("30b_rune_hit_burst");
 		context.runOnClient(client -> check(RuneParticles.lastBurstParticles >= 40, "Getting hit should make a rune burst, got " + RuneParticles.lastBurstParticles + " particles"));
