@@ -126,14 +126,14 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 			for (EquipmentClientInfo.Layer layer : layers) {
 				int color = layerColor(layer, dye);
 				if (color == 0) continue;
-				RenderType type = RenderTypes.entityTranslucentEmissive(layer.getTextureLocation(layerType));
+				RenderType type = VanityRenderTypes.armorGlow(layer.getTextureLocation(layerType));
 				collector.order(GLOW_ORDER).submitModel(model, state, poseStack, type, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(color, glow * opacity), (UvMapping) null, 0);
 			}
 		}
 
 		if (data.trimGlow[i] && trim != null) {
 			Identifier texture = trimTexture(trim.pattern().value().assetId(), layerType);
-			collector.order(GLOW_ORDER + 1).submitModel(model, state, poseStack, RenderTypes.entityTranslucentEmissive(texture), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(trimColor(trim), opacity), (UvMapping) null, 0);
+			collector.order(GLOW_ORDER + 1).submitModel(model, state, poseStack, VanityRenderTypes.armorGlow(texture), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, withAlpha(trimColor(trim), opacity), (UvMapping) null, 0);
 		}
 	}
 
@@ -151,7 +151,7 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 			if (pattern == null) continue;
 
 			Identifier texture = trimTexture(pattern, layerType);
-			RenderType type = glow ? RenderTypes.entityTranslucentEmissive(texture)
+			RenderType type = glow ? VanityRenderTypes.armorGlow(texture)
 					: opacity < 0.995F ? RenderTypes.entityTranslucent(texture)
 					: RenderTypes.armorTrim(texture, false);
 			int color = withAlpha(layers[k].color, opacity);

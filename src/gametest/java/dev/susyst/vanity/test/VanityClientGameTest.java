@@ -473,6 +473,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			config.head.trimGlow = true;
 			// Legs: see-through
 			config.legs.opacity = 0.35F;
+			// Feet: real iron boots glowing, with the glowing yellow bolt design from before
+			config.feet.glow = 1.0F;
+			config.feet.trimGlow = true;
 
 			check(drawnArmor(client, EquipmentSlot.LEGS).isEmpty(), "See-through leggings must not be drawn by the vanilla armor layer");
 			AvatarRenderState state = (AvatarRenderState) client.getEntityRenderDispatcher().getRenderer(client.player).createRenderState(client.player, 1.0F);
