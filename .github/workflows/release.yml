@@ -1,8 +1,10 @@
-# Pushing a tag like v0.10.0 builds Vanity and publishes a GitHub release with the jar.
+# Publishes a GitHub release with the jar for the version in gradle.properties.
+# Run it from Actions -> release -> Run workflow (it creates the v<version> tag), or push a v<version> tag.
 # Release notes come from changelog/<version>.md.
 name: release
 
 on:
+  workflow_dispatch:
   push:
     tags: ['v*']
 
@@ -28,15 +30,21 @@ jobs:
       - name: setup gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: check tag matches mod_version
+      - name: check version
         run: |
           version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match mod_version $version"
             exit 1
           fi
           test -f "changelog/$version.md" || { echo "::error::Missing changelog/$version.md"; exit 1; }
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release v$version already exists; bump mod_version first"
+            exit 1
+          fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: build
         run: |
@@ -58,9 +66,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "v$VERSION" \
             "build/libs/vanity-$VERSION.jar" \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
             --title "Vanity $VERSION for Minecraft 26.3" \
             --notes-file "changelog/$VERSION.md" \
             --latest
