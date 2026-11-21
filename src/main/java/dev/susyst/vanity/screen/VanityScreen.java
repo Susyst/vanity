@@ -47,6 +47,7 @@ public final class VanityScreen extends Screen {
 	private Button modeButton;
 	private Button hideButton;
 	private Button enabledButton;
+	private Button resetButton;
 	private ValueSlider offsetX;
 	private ValueSlider offsetY;
 	private ValueSlider offsetZ;
@@ -159,7 +160,7 @@ public final class VanityScreen extends Screen {
 		y += ROW + GAP;
 
 		this.scale = this.addRenderableWidget(new ValueSlider(this.panelX, y, thirdW * 2 + GAP, ROW, "Size", 0.25, 3.0, 0.05, "%.2f", 1, v -> this.current().scale = (float) v));
-		this.addRenderableWidget(Button.builder(Component.literal("Reset"), b -> {
+		this.resetButton = this.addRenderableWidget(Button.builder(Component.literal("Reset"), b -> {
 			this.current().resetTransform();
 			this.refresh();
 		}).bounds(this.panelX + 2 * (thirdW + GAP), y, thirdW, ROW).build());
@@ -237,9 +238,10 @@ public final class VanityScreen extends Screen {
 		this.rotY.active = fitted;
 		this.rotZ.active = fitted;
 		this.scale.active = fitted;
+		this.resetButton.active = fitted;
 
 		this.modeButton.setMessage(Component.literal("Fit: " + s.mode.label));
-		this.modeButton.setTooltip(Tooltip.create(Component.literal(s.mode.description)));
+		this.modeButton.setTooltip(fitted ? Tooltip.create(Component.literal(s.mode.description)) : null);
 		this.hideButton.setMessage(Component.literal("Hide armor: " + (s.hideArmor ? "ON" : "OFF")));
 		this.enabledButton.setMessage(Component.literal("Cosmetics: " + (config().enabled ? "ON" : "OFF")));
 		this.offsetX.setRealValue(s.offsetX);
