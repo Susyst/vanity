@@ -26,7 +26,22 @@ public final class VanityRenderTypes {
 					.sortOnUpload()
 					.createRenderSetup()));
 
+	/** Lit and translucent, layered like vanilla armor: see-through armor, and trims redrawn over a glow. */
+	private static final Function<Identifier, RenderType> ARMOR_TRANSLUCENT = Util.memoize(texture -> RenderTypeAccessor.vanity$create(
+			"vanity_armor_translucent",
+			RenderSetup.builder(RenderPipelines.ENTITY_TRANSLUCENT)
+					.withTexture("Sampler0", texture)
+					.useLightmap()
+					.useOverlay()
+					.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
+					.sortOnUpload()
+					.createRenderSetup()));
+
 	private VanityRenderTypes() {
+	}
+
+	public static RenderType armorTranslucent(Identifier texture) {
+		return ARMOR_TRANSLUCENT.apply(texture);
 	}
 
 	public static RenderType armorGlow(Identifier texture) {
