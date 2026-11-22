@@ -31,8 +31,8 @@ public final class SwingTrails {
 	private static final RandomSource RANDOM = RandomSource.create();
 	/** Ticks a trail takes to sweep across. */
 	private static final int FRAMES = 4;
-	/** Half of the arc, in radians (70 degrees each way from straight ahead). */
-	private static final double HALF_ARC = Math.toRadians(70);
+	/** Half of the arc, in radians (60 degrees each way from straight ahead). */
+	private static final double HALF_ARC = Math.toRadians(60);
 
 	/** Clicking faster than this many ticks apart doesn't start another trail. */
 	private static final int MIN_GAP = 3;
@@ -126,7 +126,10 @@ public final class SwingTrails {
 			case COMBO -> right.add(up.scale(0.7 * combo)).normalize();
 		};
 
-		Vec3 center = player.getEyePosition().add(up.scale(-0.25)).add(forward.scale(0.15));
+		// The arc's middle sits off to one side of your eye: an arc around the eye itself is seen edge-on, as a straight
+		// line, in first person
+		Vec3 side = forward.cross(sweep).normalize();
+		Vec3 center = player.getEyePosition().add(up.scale(-0.2)).add(forward.scale(0.25)).add(side.scale(0.55));
 		double radius = 1.2 + 0.5 * trail.size;
 		int perFrame = Math.max(2, Math.round(9 * trail.amount));
 		int total = perFrame * FRAMES;

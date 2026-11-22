@@ -45,6 +45,7 @@ import dev.susyst.vanity.render.SwingTrails;
 import dev.susyst.vanity.config.SwingShape;
 import dev.susyst.vanity.config.TrailStyle;
 import net.minecraft.world.InteractionHand;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import dev.susyst.vanity.render.CustomArmors;
 import net.minecraft.client.resources.model.EquipmentAssetManager;
 import net.minecraft.world.entity.Entity;
@@ -1131,7 +1132,8 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			faceForward(client);
 			Abilities.lastTrailParticles = 0;
 		});
-		singleplayer.getServer().runCommand("title @p actionbar \"-50 Mana (Instant Transmission)\"");
+		// Hypixel's action bar comes as a system message shown over the hotbar
+		actionBar(context, "\u00a7c1200/1200\u2764     \u00a7b-50 Mana (\u00a76Instant Transmission\u00a7b)     \u00a7b950/1000\u270e Mana");
 		context.waitTicks(2);
 		singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~8 ~ ~");
 		context.waitTicks(3);
@@ -1147,7 +1149,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			VanityClient.config().abilities.style = TrailStyle.RAINBOW;
 			Abilities.lastTrailParticles = 0;
 		});
-		singleplayer.getServer().runCommand("title @p actionbar \"-300 Mana (Wither Impact)\"");
+		actionBar(context, "-300 Mana (Wither Impact)");
 		context.waitTicks(2);
 		singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~-8 ~ ~");
 		context.waitTicks(3);
@@ -1160,17 +1162,33 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			VanityClient.config().abilities.style = TrailStyle.FROST;
 			Abilities.lastRingParticles = 0;
 		});
-		singleplayer.getServer().runCommand("title @p actionbar \"-120 Mana (Ice Spray)\"");
+		actionBar(context, "-120 Mana (Ice Spray)");
 		context.waitTicks(3);
 		context.runOnClient(client -> {
 			check(Abilities.lastAbilityName.equals("Ice Spray") && Abilities.lastRingParticles > 0, "Ice Spray should play a ring");
 			Abilities.lastRingParticles = 0;
 		});
 		context.takeScreenshot("38c_ability_ring");
-		singleplayer.getServer().runCommand("title @p actionbar \"-120 Mana (Ice Spray)\"");
+		actionBar(context, "-120 Mana (Ice Spray)");
 		context.waitTicks(3);
 		context.runOnClient(client -> check(Abilities.lastRingParticles == 0, "The same text shown again right away is the same use"));
 		context.waitTicks(30);
+
+		// The other way servers send it, the /title actionbar packet
+		context.runOnClient(client -> Abilities.lastAbilityName = "");
+		singleplayer.getServer().runCommand("title @p actionbar \"-25 Mana (Packet Check)\"");
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			StringBuilder names = new StringBuilder();
+			for (java.lang.reflect.Method m : client.getConnection().getClass().getMethods()) {
+				if (m.getName().toLowerCase(java.util.Locale.ROOT).contains("actionbar") || m.getName().toLowerCase(java.util.Locale.ROOT).contains("systemchat")) names.append(m.getName()).append(' ');
+			}
+			StringBuilder hud = new StringBuilder(client.gui.hud.getClass().getName()).append(": ");
+			for (java.lang.reflect.Method m : client.gui.hud.getClass().getMethods()) {
+				if (m.getName().toLowerCase(java.util.Locale.ROOT).contains("overlay")) hud.append(m.getName()).append(java.util.Arrays.toString(m.getParameterTypes())).append(' ');
+			}
+			System.out.println("[vanity-test] /title actionbar read: " + Abilities.lastAbilityName.equals("Packet Check") + "; packet listener: " + names + "; hud " + hud);
+		});
 
 		// Right-clicking a teleport item counts too, without the mana text
 		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:diamond_shovel[minecraft:custom_data={id:\"ASPECT_OF_THE_VOID\"}]");
@@ -1213,6 +1231,11 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.takeScreenshot("38e_try_it_abilities");
 		context.runOnClient(client -> VanityClient.config().abilities.style = TrailStyle.NONE);
 		context.waitTicks(10);
+	}
+
+	/** Text above the hotbar, sent the way Hypixel does: a system message shown over the hotbar. */
+	private static void actionBar(ClientGameTestContext context, String text) {
+		context.runOnClient(client -> ClientReceiveMessageEvents.GAME.invoker().onReceiveGameMessage(Component.literal(text), true));
 	}
 
 	/** A left click in game: what the attack key does (swing at whatever you look at, or at nothing). */
