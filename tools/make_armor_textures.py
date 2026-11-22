@@ -365,8 +365,6 @@ class Design:
                 f.put(x, 3, rgba(p["visor"]))
             f.lit(2, 3, g, 1.0)
             f.lit(5, 3, g, 1.0)
-            for x, y in ((5, 5), (6, 5), (5, 6), (6, 6)):
-                f.put(x, y, rgba(p["visor"]))
         elif self.visor == "slit":
             self.plate(f, 0, 2, 8, 5)
             self.plate(f, 0, 5, 8, 8, tint=0.9)
