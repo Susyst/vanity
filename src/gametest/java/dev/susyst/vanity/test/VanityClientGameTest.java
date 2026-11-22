@@ -1107,7 +1107,10 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.runOnClient(client -> {
 			check(client.gui.screen() == null, "Try it should close the wardrobe");
 			check(CombatParticles.lastKillParticles > 0, "Try it should play the kill effect");
+			// The test's mouse moves turn the view once the wardrobe closes; face the camera again
+			client.player.setXRot(0.0F);
 		});
+		context.waitTicks(1);
 		context.takeScreenshot("36f_try_it_totem");
 		context.runOnClient(client -> {
 			VanityClient.config().combat.hit = HitEffect.NONE;

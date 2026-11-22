@@ -1302,7 +1302,7 @@ public final class VanityScreen extends Screen {
 		int top = this.menuTop();
 		int h = rows * MENU_ROW + 4;
 		g.nextStratum();
-		Glass.fill(g, m.x(), top, m.w(), h, 0xF2121720);
+		Glass.fill(g, m.x(), top, m.w(), h, 0xFF121720);
 		Glass.border(g, m.x(), top, m.w(), h, Glass.alpha(Glass.ACCENT, 0x90));
 		int hovered = this.menuIndexAt(mouseX, mouseY);
 
