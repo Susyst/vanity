@@ -41,9 +41,10 @@ public final class SwingTrails {
 	private static int frame = -1;
 	private static int combo = 1;
 
-	/** For tests: how many particles the last trail made so far, and how many trails started. */
+	/** For tests: how many particles the last trail made so far, how many trails started, how many swings were seen. */
 	public static int lastParticles;
 	public static int trails;
+	public static int swings;
 
 	private SwingTrails() {
 	}
@@ -65,6 +66,7 @@ public final class SwingTrails {
 
 	/** Your arm swings (attacking, or clicking at nothing); called from LocalPlayer#swing. */
 	public static void onSwing(LocalPlayer player, InteractionHand hand) {
+		swings++;
 		ClientLevel level = Minecraft.getInstance().level;
 		VanityConfig config = VanityClient.config();
 		SwingTrail trail = config.swing;

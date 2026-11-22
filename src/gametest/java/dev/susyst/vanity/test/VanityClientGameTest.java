@@ -1098,7 +1098,8 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			});
 			attackClick(context);
 			context.waitTicks(3);
-			context.runOnClient(client -> check(SwingTrails.lastParticles > 0, style.label + " swing trail should draw"));
+			context.runOnClient(client -> check(SwingTrails.lastParticles > 0, style.label + " swing trail should draw (swings seen " + SwingTrails.swings
+					+ ", trails " + SwingTrails.trails + ", holding " + client.player.getMainHandItem() + ", weapon " + SwingTrails.isWeapon(client.player.getMainHandItem()) + ")"));
 			context.takeScreenshot("37_swing_trail_" + style.name().toLowerCase(java.util.Locale.ROOT));
 			context.waitTicks(12);
 		}
@@ -1214,9 +1215,17 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.waitTicks(10);
 	}
 
-	/** A left click in game (an attack swing at whatever you look at, or at nothing). */
+	/** A left click in game: what the attack key does (swing at whatever you look at, or at nothing). */
 	private static void attackClick(ClientGameTestContext context) {
-		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.runOnClient(client -> {
+			try {
+				java.lang.reflect.Method startAttack = Minecraft.class.getDeclaredMethod("startAttack");
+				startAttack.setAccessible(true);
+				startAttack.invoke(client);
+			} catch (ReflectiveOperationException e) {
+				throw new AssertionError("Couldn't attack", e);
+			}
+		});
 	}
 
 	/** Hit and kill effects on a real target: hit a pig, it dies, the kill effect plays where it was. */
