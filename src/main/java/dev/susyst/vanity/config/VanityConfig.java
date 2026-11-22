@@ -55,6 +55,10 @@ public final class VanityConfig {
 	public int outfit = -1;
 	/** Hit and kill effects. */
 	public CombatEffects combat = new CombatEffects();
+	/** Swing trails. */
+	public SwingTrail swing = new SwingTrail();
+	/** SkyBlock ability effects. */
+	public AbilityEffects abilities = new AbilityEffects();
 	/** Held-item skins. */
 	public List<ItemSkin> itemSkins = new ArrayList<>();
 	/** Items grabbed with the Grab key (hover an item in any inventory and press it), to use as looks. */
@@ -153,6 +157,10 @@ public final class VanityConfig {
 
 		if (this.combat == null) this.combat = new CombatEffects();
 		this.combat.sanitize();
+		if (this.swing == null) this.swing = new SwingTrail();
+		this.swing.sanitize();
+		if (this.abilities == null) this.abilities = new AbilityEffects();
+		this.abilities.sanitize();
 		if (this.picks == null) this.picks = new ArrayList<>();
 		this.picks.removeIf(json -> json == null || json.isJsonNull());
 		if (this.itemSkins == null) this.itemSkins = new ArrayList<>();

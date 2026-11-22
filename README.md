@@ -80,6 +80,24 @@ Magic, Notes) and an effect where something you hit dies (Soul burst, Lightning,
 Explosion, Rainbow ring, Void). Color (for Sparks and Firework), size, amount, sounds, and whether they play on players.
 **Try it** plays them in front of you. Only you see them.
 
+## Swing trails
+
+**Hand → Swing**: a trail where your weapon swings, sweeping across in front of you so it lines up in first and third
+person. Styles: Color, Sparkle, Flame, Soul fire, Frost, Electric, Magic, Void, Rainbow. Shapes: Diagonal, Flat,
+Overhead, or Combo (flips direction every swing). Size, amount, an optional whoosh, and **Weapons** (swords, axes,
+tridents, maces and SkyBlock swords and daggers) or **Anything**. Only you see it.
+
+## SkyBlock ability effects
+
+**Hand → Abilities**: effects when you use a SkyBlock item ability, in the same styles as swing trails.
+
+- **Teleports** leave a trail from where you were to where you land: Aspect of the End and Void (including etherwarp)
+  and Wither Impact on Hyperion, Valkyrie, Astraea and Scylla, which also implodes where you land.
+- **Every other ability** that costs mana sends a ring out around you.
+
+An ability counts as used when its mana cost shows above your hotbar (`-50 Mana (Instant Transmission)`), so it works
+for any item. Right-clicking a teleport item counts too. Only you see the effects; SkyBlock's own still play.
+
 ## SkyBlock and custom textures
 
 - **Grab key (K)**: in any inventory, chest, menu or the Auction House, hover an item and press **K**. It's saved with

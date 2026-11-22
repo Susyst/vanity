@@ -49,11 +49,15 @@ import dev.susyst.vanity.config.ItemSkin;
 import dev.susyst.vanity.config.Outfit;
 import dev.susyst.vanity.config.RuneReaction;
 import dev.susyst.vanity.config.SlotSettings;
+import dev.susyst.vanity.config.SwingShape;
+import dev.susyst.vanity.config.TrailStyle;
 import dev.susyst.vanity.config.TrimLayer;
 import dev.susyst.vanity.config.TrimMode;
 import dev.susyst.vanity.config.Trims;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.render.Abilities;
 import dev.susyst.vanity.render.CombatParticles;
+import dev.susyst.vanity.render.SwingTrails;
 import dev.susyst.vanity.render.CustomArmors;
 import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.render.VanityCosmetics;
@@ -82,9 +86,13 @@ public final class VanityScreen extends Screen {
 		RUNE("Rune"),
 		OUTFITS("Outfits"),
 		/** Held-item skins; opened with the Hand tab, not a page tab. */
-		HAND("Item skins"),
+		HAND("Skins"),
 		/** Hit and kill effects, the Hand tab's second page. */
-		EFFECTS("Hit & kill");
+		EFFECTS("Hit & kill"),
+		/** Swing trails, the Hand tab's third page. */
+		SWING("Swing"),
+		/** SkyBlock ability effects, the Hand tab's fourth page. */
+		ABILITIES("Abilities");
 
 		final String label;
 
@@ -97,7 +105,7 @@ public final class VanityScreen extends Screen {
 		}
 
 		boolean isHand() {
-			return this == HAND || this == EFFECTS;
+			return this == HAND || this == EFFECTS || this == SWING || this == ABILITIES;
 		}
 	}
 
@@ -136,6 +144,7 @@ public final class VanityScreen extends Screen {
 	private GlassButton allTab;
 	private GlassButton handTab;
 	private final List<GlassButton> handPageTabs = new ArrayList<>();
+	private static final Page[] HAND_PAGES = {Page.HAND, Page.EFFECTS, Page.SWING, Page.ABILITIES};
 	private final Map<Page, GlassButton> pageTabs = new EnumMap<>(Page.class);
 	private final Map<Page, List<AbstractWidget>> pageWidgets = new EnumMap<>(Page.class);
 	/** Widgets only shown when editing one slot. */
@@ -238,7 +247,7 @@ public final class VanityScreen extends Screen {
 				case TRIM -> target.copyTrimFrom(source);
 				case DESIGN -> target.copyDesignFrom(source);
 				case RUNE -> target.rune = source.rune.copy();
-				case OUTFITS, HAND, EFFECTS -> {
+				case OUTFITS, HAND, EFFECTS, SWING, ABILITIES -> {
 				}
 			}
 		}
@@ -539,7 +548,7 @@ public final class VanityScreen extends Screen {
 			}
 			this.all = false;
 		});
-		this.handTab.setTooltip(tip("Item skins for what you hold, and hit & kill effects"));
+		this.handTab.setTooltip(tip("Item skins for what you hold, hit & kill effects, swing trails and SkyBlock ability effects"));
 
 		// Page tabs
 		y += step;
@@ -551,13 +560,12 @@ public final class VanityScreen extends Screen {
 			this.pageTabs.put(p, this.button(null, this.panelX + i * pageW, y, pageW, p.label, GlassButton.Style.TAB, () -> this.page = p));
 		}
 
-		// On the Hand tab the page tabs are Item skins and Hit & kill
+		// On the Hand tab the page tabs are Skins, Hit & kill, Swing and Abilities
 		this.handPageTabs.clear();
-		Page[] handPages = {Page.HAND, Page.EFFECTS};
-		int handW = this.panelW / handPages.length;
+		int handW = this.panelW / HAND_PAGES.length;
 
-		for (int i = 0; i < handPages.length; i++) {
-			Page p = handPages[i];
+		for (int i = 0; i < HAND_PAGES.length; i++) {
+			Page p = HAND_PAGES[i];
 			GlassButton tab = this.button(null, this.panelX + i * handW, y, handW, p.label, GlassButton.Style.TAB, () -> this.page = p);
 			this.handPageTabs.add(tab);
 		}
@@ -834,6 +842,51 @@ public final class VanityScreen extends Screen {
 		tryIt.setTooltip(tip("Close the wardrobe and play the hit, then the kill effect, in front of you"));
 		this.hintY.put(Page.EFFECTS, r4 + 2);
 
+		// ---- Swing trails (Hand tab) ----
+		this.dropdown(Page.SWING, this.panelX, r0, halfW, "Trail", () -> enumOptions(TrailStyle.values(), e -> e.label), () -> config().swing.style.ordinal(),
+				index -> config().swing.style = TrailStyle.values()[index]).setTooltip(tip("Particles where your weapon swings"));
+		this.dropdown(Page.SWING, this.panelX + halfW + GAP, r0, halfW, "Shape", () -> enumOptions(SwingShape.values(), e -> e.label), () -> config().swing.shape.ordinal(),
+				index -> config().swing.shape = SwingShape.values()[index]).setTooltip(tip("Which way it sweeps. Combo flips direction every swing."));
+		this.colorRow(Page.SWING, r1, () -> config().swing.color, color -> config().swing.color = color);
+		this.slider(Page.SWING, this.panelX, r2, thirdW, "Size", 0.5, 2.0, 0.1, "%.1fx", s -> config().swing.size, (s, v) -> config().swing.size = v);
+		this.slider(Page.SWING, x2, r2, thirdW, "Amount", 0.25, 3.0, 0.25, "%.2fx", s -> config().swing.amount, (s, v) -> config().swing.amount = v);
+		GlassButton swingSounds = this.button(Page.SWING, x3, r2, thirdW, "", () -> config().swing.sounds = !config().swing.sounds);
+		swingSounds.setTooltip(tip("A soft whoosh with each swing"));
+		this.sync(() -> swingSounds.setMessage(Component.literal("Sound: " + onOff(config().swing.sounds))));
+		this.hexBox(Page.SWING, this.panelX, r3, thirdW, () -> config().swing.color, color -> config().swing.color = color);
+		GlassButton weaponsOnly = this.button(Page.SWING, x2, r3, thirdW, "", () -> config().swing.weaponsOnly = !config().swing.weaponsOnly);
+		weaponsOnly.setTooltip(tip("Weapons: only swords, axes, tridents, maces and SkyBlock swords. Anything: every swing, even empty-handed."));
+		this.sync(() -> weaponsOnly.setMessage(Component.literal(config().swing.weaponsOnly ? "Weapons" : "Anything")));
+		GlassButton trySwing = this.button(Page.SWING, x3, r3, thirdW, "Try it", GlassButton.Style.PRIMARY, () -> {
+			this.onClose();
+			SwingTrails.preview(this.minecraft);
+		});
+		trySwing.setTooltip(tip("Close the wardrobe and draw one trail in front of you"));
+		this.hintY.put(Page.SWING, r4 + 2);
+
+		// ---- SkyBlock ability effects (Hand tab) ----
+		this.dropdown(Page.ABILITIES, this.panelX, r0, halfW, "Style", () -> enumOptions(TrailStyle.values(), e -> e.label), () -> config().abilities.style.ordinal(),
+				index -> config().abilities.style = TrailStyle.values()[index]).setTooltip(tip("Particles for your SkyBlock item abilities"));
+		GlassButton teleports = this.button(Page.ABILITIES, this.panelX + halfW + GAP, r0, halfW, "", () -> config().abilities.teleports = !config().abilities.teleports);
+		teleports.setTooltip(tip("A trail along teleports: Aspect of the End / Void, etherwarp, Wither Impact (Hyperion)"));
+		this.sync(() -> teleports.setMessage(Component.literal("Teleports: " + onOff(config().abilities.teleports))));
+		this.colorRow(Page.ABILITIES, r1, () -> config().abilities.color, color -> config().abilities.color = color);
+		this.slider(Page.ABILITIES, this.panelX, r2, thirdW, "Size", 0.5, 2.0, 0.1, "%.1fx", s -> config().abilities.size, (s, v) -> config().abilities.size = v);
+		this.slider(Page.ABILITIES, x2, r2, thirdW, "Amount", 0.25, 3.0, 0.25, "%.2fx", s -> config().abilities.amount, (s, v) -> config().abilities.amount = v);
+		GlassButton abilitySounds = this.button(Page.ABILITIES, x3, r2, thirdW, "", () -> config().abilities.sounds = !config().abilities.sounds);
+		abilitySounds.setTooltip(tip("Play a sound with each effect (on top of SkyBlock's own)"));
+		this.sync(() -> abilitySounds.setMessage(Component.literal("Sound: " + onOff(config().abilities.sounds))));
+		this.hexBox(Page.ABILITIES, this.panelX, r3, thirdW, () -> config().abilities.color, color -> config().abilities.color = color);
+		GlassButton others = this.button(Page.ABILITIES, x2, r3, thirdW, "", () -> config().abilities.others = !config().abilities.others);
+		others.setTooltip(tip("A ring around you for every other ability that uses mana"));
+		this.sync(() -> others.setMessage(Component.literal("Others: " + onOff(config().abilities.others))));
+		GlassButton tryAbility = this.button(Page.ABILITIES, x3, r3, thirdW, "Try it", GlassButton.Style.PRIMARY, () -> {
+			this.onClose();
+			Abilities.preview(this.minecraft);
+		});
+		tryAbility.setTooltip(tip("Close the wardrobe and play a teleport trail and a ring"));
+		this.hintY.put(Page.ABILITIES, r4 + 2);
+
 		// ---- Hand (held-item skins) ----
 		this.dropdown(Page.HAND, this.panelX, r0, this.panelW, "Skin", "None yet", this::skinOptions, () -> config().itemSkins.isEmpty() ? 0 : this.skinIndex,
 				index -> this.skinIndex = index).setTooltip(tip("Your item skins: pick one to edit it"));
@@ -987,7 +1040,7 @@ public final class VanityScreen extends Screen {
 
 		for (int i = 0; i < this.handPageTabs.size(); i++) {
 			this.handPageTabs.get(i).visible = hand;
-			this.handPageTabs.get(i).selected = this.page == (i == 0 ? Page.HAND : Page.EFFECTS);
+			this.handPageTabs.get(i).selected = this.page == HAND_PAGES[i];
 		}
 
 		for (Map.Entry<Page, List<AbstractWidget>> entry : this.pageWidgets.entrySet()) {
@@ -1426,6 +1479,8 @@ public final class VanityScreen extends Screen {
 			case OUTFITS -> this.hint(graphics, "Press " + VanityClient.nextOutfitKeyName() + " in game to switch outfits.");
 			case HAND -> this.handStatus(graphics);
 			case EFFECTS -> this.hint(graphics, "Plays when you hit something, and where it dies if you hit it. Only you see it. Color is for Sparks and Firework.");
+			case SWING -> this.hint(graphics, "A trail where your weapon swings, in first and third person. Only you see it. Color is for the Color trail.");
+			case ABILITIES -> this.hint(graphics, "SkyBlock: plays when an ability's mana cost shows above your hotbar. Teleports leave a trail. Only you see it.");
 		}
 
 		LocalPlayer player = this.minecraft.player;

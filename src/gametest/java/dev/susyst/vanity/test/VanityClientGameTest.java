@@ -40,6 +40,11 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 import dev.susyst.vanity.config.HitEffect;
 import dev.susyst.vanity.config.KillEffect;
 import dev.susyst.vanity.render.CombatParticles;
+import dev.susyst.vanity.render.Abilities;
+import dev.susyst.vanity.render.SwingTrails;
+import dev.susyst.vanity.config.SwingShape;
+import dev.susyst.vanity.config.TrailStyle;
+import net.minecraft.world.InteractionHand;
 import dev.susyst.vanity.render.CustomArmors;
 import net.minecraft.client.resources.model.EquipmentAssetManager;
 import net.minecraft.world.entity.Entity;
@@ -176,6 +181,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testGrabPickAndSkyblockIds(context, singleplayer);
 			testCustomArmors(context, singleplayer);
 			testCombatEffects(context, singleplayer);
+			testSwingAndAbilities(context, singleplayer);
 			testAutoOutfit(context);
 		}
 	}
@@ -1068,6 +1074,146 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.takeScreenshot("35d_your_own_armor_glow_night");
 		singleplayer.getServer().runCommand("time set noon");
 		context.waitTicks(3);
+	}
+
+	/** Swing trails, and SkyBlock ability effects read from the mana text above the hotbar. */
+	private static void testSwingAndAbilities(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		singleplayer.getServer().runCommand("time set noon");
+		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:diamond_sword");
+		context.runOnClient(client -> {
+			VanityConfig config = VanityClient.config();
+			config.swing.shape = SwingShape.DIAGONAL;
+			config.swing.color = 0x5BD2FF;
+			config.swing.weaponsOnly = true;
+			faceForward(client);
+		});
+		context.waitTicks(3);
+
+		// First person: swing and catch each trail mid-sweep
+		setCamera(context, CameraType.FIRST_PERSON);
+		for (TrailStyle style : new TrailStyle[] {TrailStyle.COLOR, TrailStyle.SPARKLE, TrailStyle.FLAME, TrailStyle.RAINBOW}) {
+			context.runOnClient(client -> {
+				VanityClient.config().swing.style = style;
+				SwingTrails.lastParticles = 0;
+				client.player.swing(InteractionHand.MAIN_HAND);
+			});
+			context.waitTicks(3);
+			context.runOnClient(client -> check(SwingTrails.lastParticles > 0, style.label + " swing trail should draw"));
+			context.takeScreenshot("37_swing_trail_" + style.name().toLowerCase(java.util.Locale.ROOT));
+			context.waitTicks(12);
+		}
+
+		// Third person, from behind
+		setCamera(context, CameraType.THIRD_PERSON_BACK);
+		context.runOnClient(client -> {
+			VanityClient.config().swing.style = TrailStyle.COLOR;
+			client.player.swing(InteractionHand.MAIN_HAND);
+		});
+		context.waitTicks(3);
+		context.takeScreenshot("37e_swing_trail_third_person");
+		context.waitTicks(12);
+
+		// Weapons only: an empty hand doesn't leave a trail
+		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:air");
+		context.waitTicks(3);
+		int before = context.computeOnClient(client -> SwingTrails.trails);
+		context.runOnClient(client -> client.player.swing(InteractionHand.MAIN_HAND));
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			check(SwingTrails.trails == before, "With Weapons only, an empty-handed swing shouldn't leave a trail");
+			VanityClient.config().swing.style = TrailStyle.NONE;
+		});
+		context.waitTicks(10);
+
+		// Abilities: the mana text comes above the hotbar, then the teleport moves you sideways
+		setCamera(context, CameraType.THIRD_PERSON_BACK);
+		context.runOnClient(client -> {
+			VanityClient.config().abilities.style = TrailStyle.VOID;
+			faceForward(client);
+			Abilities.lastTrailParticles = 0;
+		});
+		singleplayer.getServer().runCommand("title @p actionbar \"-50 Mana (Instant Transmission)\"");
+		context.waitTicks(2);
+		singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~8 ~ ~");
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			check(Abilities.lastAbilityName.equals("Instant Transmission"), "The mana text above the hotbar should be read, got \"" + Abilities.lastAbilityName + "\"");
+			check(Abilities.lastTrailParticles > 0, "Instant Transmission should leave a teleport trail");
+		});
+		context.takeScreenshot("38a_ability_teleport_trail");
+		context.waitTicks(20);
+
+		// Wither Impact: a trail and an implosion where you land
+		context.runOnClient(client -> {
+			VanityClient.config().abilities.style = TrailStyle.RAINBOW;
+			Abilities.lastTrailParticles = 0;
+		});
+		singleplayer.getServer().runCommand("title @p actionbar \"-300 Mana (Wither Impact)\"");
+		context.waitTicks(2);
+		singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~-8 ~ ~");
+		context.waitTicks(3);
+		context.runOnClient(client -> check(Abilities.lastTrailParticles > 40, "Wither Impact should leave a trail and an implosion, got " + Abilities.lastTrailParticles));
+		context.takeScreenshot("38b_ability_wither_impact");
+		context.waitTicks(20);
+
+		// Any other ability: a ring, once per use even though the text stays up
+		context.runOnClient(client -> {
+			VanityClient.config().abilities.style = TrailStyle.FROST;
+			Abilities.lastRingParticles = 0;
+		});
+		singleplayer.getServer().runCommand("title @p actionbar \"-120 Mana (Ice Spray)\"");
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			check(Abilities.lastAbilityName.equals("Ice Spray") && Abilities.lastRingParticles > 0, "Ice Spray should play a ring");
+			Abilities.lastRingParticles = 0;
+		});
+		context.takeScreenshot("38c_ability_ring");
+		singleplayer.getServer().runCommand("title @p actionbar \"-120 Mana (Ice Spray)\"");
+		context.waitTicks(3);
+		context.runOnClient(client -> check(Abilities.lastRingParticles == 0, "The same text shown again right away is the same use"));
+		context.waitTicks(30);
+
+		// Right-clicking a teleport item counts too, without the mana text
+		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:diamond_shovel[minecraft:custom_data={id:\"ASPECT_OF_THE_VOID\"}]");
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			VanityClient.config().abilities.style = TrailStyle.SPARKLE;
+			Abilities.lastTrailParticles = 0;
+			client.gameMode.useItem(client.player, InteractionHand.MAIN_HAND);
+		});
+		singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~8 ~ ~");
+		context.waitTicks(3);
+		context.runOnClient(client -> check(Abilities.lastTrailParticles > 0, "Right-clicking Aspect of the Void then teleporting should leave a trail"));
+		singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~-8 ~ ~");
+		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:air");
+		context.waitTicks(5);
+
+		// The two new wardrobe pages
+		for (String tab : new String[] {"Swing", "Abilities"}) {
+			context.setScreen(VanityScreen::hand);
+			context.waitTicks(3);
+			clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter(tab));
+			context.waitTicks(3);
+			context.getInput().setCursorPos(1, 1);
+			context.waitTicks(2);
+			context.takeScreenshot("38d_wardrobe_" + tab.toLowerCase(java.util.Locale.ROOT));
+		}
+
+		// Abilities "Try it": a trail and a ring in front of you
+		context.runOnClient(client -> {
+			Abilities.lastTrailParticles = 0;
+			Abilities.lastRingParticles = 0;
+		});
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Try it"));
+		context.waitTicks(2);
+		context.runOnClient(client -> {
+			check(client.gui.screen() == null, "Try it should close the wardrobe");
+			check(Abilities.lastTrailParticles > 0 && Abilities.lastRingParticles > 0, "Try it should play a trail and a ring");
+			client.player.setXRot(0.0F);
+		});
+		context.takeScreenshot("38e_try_it_abilities");
+		context.runOnClient(client -> VanityClient.config().abilities.style = TrailStyle.NONE);
+		context.waitTicks(10);
 	}
 
 	/** Hit and kill effects on a real target: hit a pig, it dies, the kill effect plays where it was. */

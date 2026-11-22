@@ -26,6 +26,8 @@ import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -37,10 +39,12 @@ import dev.susyst.vanity.config.ItemSkin;
 import dev.susyst.vanity.config.Outfit;
 import dev.susyst.vanity.config.VanityConfig;
 import dev.susyst.vanity.mixin.AbstractContainerScreenAccessor;
+import dev.susyst.vanity.render.Abilities;
 import dev.susyst.vanity.render.CombatParticles;
 import dev.susyst.vanity.render.CustomArmors;
 import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.render.RuneParticles;
+import dev.susyst.vanity.render.SwingTrails;
 import dev.susyst.vanity.render.VanityCosmetics;
 import dev.susyst.vanity.render.VanityLayer;
 import dev.susyst.vanity.render.VanityRenderData;
@@ -132,6 +136,8 @@ public final class VanityClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			RuneParticles.tick(client);
 			CombatParticles.tick(client);
+			SwingTrails.tick(client);
+			Abilities.tick(client);
 
 			while (openKey.consumeClick()) {
 				if (client.player != null && client.gui.screen() == null) {
@@ -175,6 +181,17 @@ public final class VanityClient implements ClientModInitializer {
 		AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
 			Minecraft client = Minecraft.getInstance();
 			if (level.isClientSide() && player == client.player) CombatParticles.onAttack(client, entity);
+			return InteractionResult.PASS;
+		});
+
+		// SkyBlock abilities: the mana text above the hotbar (when it comes as a chat message; the packet kind is a mixin),
+		// and right-clicks with teleport items
+		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+			if (overlay) Abilities.onActionBar(message);
+		});
+		UseItemCallback.EVENT.register((player, level, hand) -> {
+			Minecraft client = Minecraft.getInstance();
+			if (level.isClientSide() && player == client.player) Abilities.onUse(client, ItemSkins.skyblockId(player.getItemInHand(hand)));
 			return InteractionResult.PASS;
 		});
 
