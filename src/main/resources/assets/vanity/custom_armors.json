@@ -5,7 +5,7 @@
     "color": 8046827,
     "glow": true,
     "pulse": false,
-    "parts": 74
+    "parts": 82
   },
   {
     "id": "obsidian_knight",
@@ -13,7 +13,7 @@
     "color": 3811922,
     "glow": true,
     "pulse": true,
-    "parts": 74
+    "parts": 78
   },
   {
     "id": "ember",
@@ -37,7 +37,7 @@
     "color": 15263454,
     "glow": false,
     "pulse": false,
-    "parts": 46
+    "parts": 50
   },
   {
     "id": "void_walker",
@@ -61,6 +61,6 @@
     "color": 2920360,
     "glow": true,
     "pulse": false,
-    "parts": 46
+    "parts": 50
   }
 ]

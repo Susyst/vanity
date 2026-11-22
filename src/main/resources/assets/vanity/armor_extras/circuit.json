@@ -1651,6 +1651,152 @@
    ],
    "slot": "feet",
    "mirror": true
+  },
+  {
+   "name": "greave",
+   "bone": "right_leg",
+   "tex": [
+    54,
+    20
+   ],
+   "box": [
+    -0.55,
+    0,
+    -0.65,
+    1.1,
+    4.6,
+    0.65
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet"
+  },
+  {
+   "name": "greave_m",
+   "bone": "left_leg",
+   "tex": [
+    54,
+    20
+   ],
+   "box": [
+    -0.55,
+    0,
+    -0.65,
+    1.1,
+    4.6,
+    0.65
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet",
+   "mirror": true
+  },
+  {
+   "name": "greave_top",
+   "bone": "right_leg",
+   "tex": [
+    59,
+    20
+   ],
+   "box": [
+    -1.6,
+    0,
+    -0.35,
+    3.2,
+    0.7,
+    0.35
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet"
+  },
+  {
+   "name": "greave_top_m",
+   "bone": "left_leg",
+   "tex": [
+    59,
+    20
+   ],
+   "box": [
+    -1.6,
+    0,
+    -0.35,
+    3.2,
+    0.7,
+    0.35
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet",
+   "mirror": true
   }
  ]
 }

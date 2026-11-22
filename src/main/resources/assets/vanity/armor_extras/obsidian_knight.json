@@ -2331,10 +2331,156 @@
    "mirror": true
   },
   {
-   "name": "spur",
+   "name": "greave",
    "bone": "right_leg",
    "tex": [
     95,
+    21
+   ],
+   "box": [
+    -0.55,
+    0,
+    -0.65,
+    1.1,
+    4.6,
+    0.65
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet"
+  },
+  {
+   "name": "greave_m",
+   "bone": "left_leg",
+   "tex": [
+    95,
+    21
+   ],
+   "box": [
+    -0.55,
+    0,
+    -0.65,
+    1.1,
+    4.6,
+    0.65
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet",
+   "mirror": true
+  },
+  {
+   "name": "greave_top",
+   "bone": "right_leg",
+   "tex": [
+    100,
+    21
+   ],
+   "box": [
+    -1.6,
+    0,
+    -0.35,
+    3.2,
+    0.7,
+    0.35
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet"
+  },
+  {
+   "name": "greave_top_m",
+   "bone": "left_leg",
+   "tex": [
+    100,
+    21
+   ],
+   "box": [
+    -1.6,
+    0,
+    -0.35,
+    3.2,
+    0.7,
+    0.35
+   ],
+   "pivot": [
+    0,
+    6.6,
+    -3.0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "sway": 0,
+   "orbit": [
+    0,
+    0
+   ],
+   "slot": "feet",
+   "mirror": true
+  },
+  {
+   "name": "spur",
+   "bone": "right_leg",
+   "tex": [
+    109,
     21
    ],
    "box": [
@@ -2370,7 +2516,7 @@
    "name": "spur_m",
    "bone": "left_leg",
    "tex": [
-    95,
+    109,
     21
    ],
    "box": [
@@ -2407,7 +2553,7 @@
    "name": "spur_rowel",
    "bone": "right_leg",
    "tex": [
-    98,
+    112,
     21
    ],
    "box": [
@@ -2443,7 +2589,7 @@
    "name": "spur_rowel_m",
    "bone": "left_leg",
    "tex": [
-    98,
+    112,
     21
    ],
    "box": [
@@ -2480,8 +2626,8 @@
    "name": "cape",
    "bone": "body",
    "tex": [
-    102,
-    21
+    0,
+    28
    ],
    "box": [
     -4.6,
@@ -2515,8 +2661,8 @@
    "name": "cape_tatter0",
    "bone": "body",
    "tex": [
-    123,
-    21
+    21,
+    28
    ],
    "box": [
     -4.2,
@@ -2550,8 +2696,8 @@
    "name": "cape_tatter1",
    "bone": "body",
    "tex": [
-    0,
-    37
+    26,
+    28
    ],
    "box": [
     -1.8,
@@ -2585,8 +2731,8 @@
    "name": "cape_tatter2",
    "bone": "body",
    "tex": [
-    6,
-    37
+    32,
+    28
    ],
    "box": [
     0.6,
@@ -2620,8 +2766,8 @@
    "name": "cape_tatter3",
    "bone": "body",
    "tex": [
-    11,
-    37
+    37,
+    28
    ],
    "box": [
     3.0,
