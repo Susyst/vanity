@@ -45,7 +45,6 @@ import dev.susyst.vanity.render.SwingTrails;
 import dev.susyst.vanity.config.SwingShape;
 import dev.susyst.vanity.config.TrailStyle;
 import net.minecraft.world.InteractionHand;
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import dev.susyst.vanity.render.CustomArmors;
 import net.minecraft.client.resources.model.EquipmentAssetManager;
 import net.minecraft.world.entity.Entity;
@@ -1132,7 +1131,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			faceForward(client);
 			Abilities.lastTrailParticles = 0;
 		});
-		// Hypixel's action bar comes as a system message shown over the hotbar
+		// Hypixel's action bar: health, the ability's mana cost, mana
 		actionBar(context, "\u00a7c1200/1200\u2764     \u00a7b-50 Mana (\u00a76Instant Transmission\u00a7b)     \u00a7b950/1000\u270e Mana");
 		context.waitTicks(2);
 		singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~8 ~ ~");
@@ -1174,21 +1173,17 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.runOnClient(client -> check(Abilities.lastRingParticles == 0, "The same text shown again right away is the same use"));
 		context.waitTicks(30);
 
-		// The other way servers send it, the /title actionbar packet
+		// Sent for real by the server: the /title actionbar packet
 		context.runOnClient(client -> Abilities.lastAbilityName = "");
 		singleplayer.getServer().runCommand("title @p actionbar \"-25 Mana (Packet Check)\"");
 		context.waitTicks(3);
-		context.runOnClient(client -> {
-			StringBuilder names = new StringBuilder();
-			for (java.lang.reflect.Method m : client.getConnection().getClass().getMethods()) {
-				if (m.getName().toLowerCase(java.util.Locale.ROOT).contains("actionbar") || m.getName().toLowerCase(java.util.Locale.ROOT).contains("systemchat")) names.append(m.getName()).append(' ');
-			}
-			StringBuilder hud = new StringBuilder(client.gui.hud.getClass().getName()).append(": ");
-			for (java.lang.reflect.Method m : client.gui.hud.getClass().getMethods()) {
-				if (m.getName().toLowerCase(java.util.Locale.ROOT).contains("overlay")) hud.append(m.getName()).append(java.util.Arrays.toString(m.getParameterTypes())).append(' ');
-			}
-			System.out.println("[vanity-test] /title actionbar read: " + Abilities.lastAbilityName.equals("Packet Check") + "; packet listener: " + names + "; hud " + hud);
-		});
+		context.runOnClient(client -> check(Abilities.lastAbilityName.equals("Packet Check"), "Text the server puts above the hotbar should be read, got \"" + Abilities.lastAbilityName + "\""));
+		// ...and a system message shown over the hotbar
+		context.runOnClient(client -> Abilities.lastAbilityName = "");
+		singleplayer.getServer().runCommand("tellraw @p \"x\"");
+		context.runOnClient(client -> client.getConnection().handleSystemChat(new net.minecraft.network.protocol.game.ClientboundSystemChatPacket(Component.literal("-30 Mana (Chat Check)"), true)));
+		context.waitTicks(2);
+		context.runOnClient(client -> check(Abilities.lastAbilityName.equals("Chat Check"), "A system message over the hotbar should be read, got \"" + Abilities.lastAbilityName + "\""));
 
 		// Right-clicking a teleport item counts too, without the mana text
 		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:diamond_shovel[minecraft:custom_data={id:\"ASPECT_OF_THE_VOID\"}]");
@@ -1233,9 +1228,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.waitTicks(10);
 	}
 
-	/** Text above the hotbar, sent the way Hypixel does: a system message shown over the hotbar. */
+	/** Text above the hotbar, the way it ends up shown whichever way the server sends it. */
 	private static void actionBar(ClientGameTestContext context, String text) {
-		context.runOnClient(client -> ClientReceiveMessageEvents.GAME.invoker().onReceiveGameMessage(Component.literal(text), true));
+		context.runOnClient(client -> client.gui.hud.setOverlayMessage(Component.literal(text), false));
 	}
 
 	/** A left click in game: what the attack key does (swing at whatever you look at, or at nothing). */

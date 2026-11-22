@@ -27,7 +27,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -184,11 +183,7 @@ public final class VanityClient implements ClientModInitializer {
 			return InteractionResult.PASS;
 		});
 
-		// SkyBlock abilities: the mana text above the hotbar (when it comes as a chat message; the packet kind is a mixin),
-		// and right-clicks with teleport items
-		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-			if (overlay) Abilities.onActionBar(message);
-		});
+		// SkyBlock abilities: the mana text above the hotbar is read in HudMixin; right-clicks with teleport items here
 		UseItemCallback.EVENT.register((player, level, hand) -> {
 			Minecraft client = Minecraft.getInstance();
 			if (level.isClientSide() && player == client.player) Abilities.onUse(client, ItemSkins.skyblockId(player.getItemInHand(hand)));

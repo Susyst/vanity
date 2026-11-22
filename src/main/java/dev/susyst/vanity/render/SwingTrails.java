@@ -129,7 +129,7 @@ public final class SwingTrails {
 		// The arc's middle sits off to one side of your eye: an arc around the eye itself is seen edge-on, as a straight
 		// line, in first person
 		Vec3 side = forward.cross(sweep).normalize();
-		Vec3 center = player.getEyePosition().add(up.scale(-0.2)).add(forward.scale(0.25)).add(side.scale(0.55));
+		Vec3 center = player.getEyePosition().add(up.scale(-0.2)).add(forward.scale(0.5)).add(side.scale(0.9));
 		double radius = 1.2 + 0.5 * trail.size;
 		int perFrame = Math.max(2, Math.round(9 * trail.amount));
 		int total = perFrame * FRAMES;
