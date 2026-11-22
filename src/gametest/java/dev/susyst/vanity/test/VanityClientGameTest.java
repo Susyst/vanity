@@ -890,7 +890,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			showHud(client);
 		});
 
-		// Hover the Dark Claymore in the inventory and press the Grab key
+		// Hover the Dark Claymore in the inventory and press the Grab key (survival, so it's the normal inventory)
+		singleplayer.getServer().runCommand("gamemode survival @p");
+		context.waitTicks(5);
 		context.setScreen(() -> new InventoryScreen(Minecraft.getInstance().player));
 		context.waitTicks(5);
 		context.getInput().setCursorPos(slotCenter(context, 9)[0], slotCenter(context, 9)[1]);
@@ -922,6 +924,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.waitTicks(3);
 		context.runOnClient(client -> check(client.player.containerMenu.getCarried().isEmpty(), "The Hyperion should be put back"));
 		context.setScreen(() -> null);
+		singleplayer.getServer().runCommand("gamemode creative @p");
 
 		// Use the grabbed Dark Claymore as the Hyperion's look, from the picker
 		context.setScreen(VanityScreen::hand);
