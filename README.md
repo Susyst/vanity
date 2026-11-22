@@ -8,7 +8,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.15.1.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.16.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. On the **Look** page, open **All slots look like** to change all four slots at once: Leather, Chainmail, Iron,
    Gold, Copper, Diamond or Netherite (**Real armor** turns it off).
@@ -71,8 +71,9 @@ Get the jar from [Releases](https://github.com/Susyst/vanity/releases).
   through the normal armor renderer, so trims, glint, opacity, glow and runes work on them, and texture packs can
   change them (`assets/vanity/textures/entity/equipment/humanoid/<id>.png`).
   - Parts of them **glow in the dark** (lava cracks, circuit lines, stars, gems), some with a slow pulse.
-  - **3D pieces** that change the silhouette: horns, crests, plumes, shoulder plates, ice crystals, leaves, an antenna
-    and power core, a glowing halo with floating orbs. **3D: OFF** on the Look page hides them for that slot.
+  - **HD textures** (4x vanilla detail) and **3D shapes** that change the silhouette: curved horns, crests, plumes,
+    layered pauldrons, capes, ice crystals, antlers and leaves, a samurai crest and banner, an antenna and power core,
+    a halo with orbiting orbs and spectral wings. Capes and banners sway. **3D: OFF** on the Look page hides them.
 - **Your own armor**: **All slots look like → + Your own armor...** opens `config/vanity/armors`. Put `<name>.png`
   there (a 64x32 armor texture, or 128x64 and up) and optionally `<name>_leggings.png` and `<name>_glow.png` (pixels
   that glow in the dark); it shows up as "<Name> (yours)"

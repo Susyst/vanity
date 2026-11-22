@@ -62,8 +62,12 @@ public final class ArmorExtras {
 		}
 	}
 
-	/** One piece: its model part, whether it glows, and how it moves (spin in degrees a second, bob in pixels). */
-	public record Piece(Bone bone, ModelPart part, boolean glow, float spin, float bob, float phase, float baseY, float baseYRot) {
+	/**
+	 * One piece: the body part it rides on, the armor piece it comes with, whether it glows, and how it moves: spin
+	 * (degrees a second), bob (pixels), sway (degrees, for capes and banners) and orbit (radius, radians a second).
+	 */
+	public record Piece(Bone bone, CosmeticSlot slot, ModelPart part, boolean glow, float spin, float bob, float sway, float orbitRadius, float orbitSpeed,
+			float phase, float baseX, float baseY, float baseZ, float baseXRot, float baseYRot) {
 	}
 
 	private ArmorExtras() {
@@ -96,8 +100,12 @@ public final class ArmorExtras {
 			for (JsonElement element : parts) {
 				JsonObject p = element.getAsJsonObject();
 				ModelPart part = baked.getChild(p.get("name").getAsString());
-				pieces.add(new Piece(Bone.valueOf(p.get("bone").getAsString().toUpperCase(java.util.Locale.ROOT)), part, p.get("glow").getAsBoolean(),
-						p.get("spin").getAsFloat(), p.get("bob").getAsFloat(), p.get("phase").getAsFloat(), part.y, part.yRot));
+				Bone bone = Bone.valueOf(p.get("bone").getAsString().toUpperCase(java.util.Locale.ROOT));
+				CosmeticSlot slot = p.has("slot") ? CosmeticSlot.valueOf(p.get("slot").getAsString().toUpperCase(java.util.Locale.ROOT)) : bone.slot;
+				JsonArray orbit = p.has("orbit") ? p.getAsJsonArray("orbit") : null;
+				pieces.add(new Piece(bone, slot, part, p.get("glow").getAsBoolean(), number(p, "spin"), number(p, "bob"), number(p, "sway"),
+						orbit != null ? orbit.get(0).getAsFloat() : 0.0F, orbit != null ? orbit.get(1).getAsFloat() : 0.0F, number(p, "phase"),
+						part.x, part.y, part.z, part.xRot, part.yRot));
 			}
 
 			return List.copyOf(pieces);
@@ -105,6 +113,10 @@ public final class ArmorExtras {
 			LOGGER.error("Vanity: couldn't load 3D pieces for {}", id, e);
 			return List.of();
 		}
+	}
+
+	private static float number(JsonObject object, String key) {
+		return object.has(key) ? object.get(key).getAsFloat() : 0.0F;
 	}
 
 	private static float[] floats(JsonArray array) {
@@ -122,13 +134,20 @@ public final class ArmorExtras {
 		float seconds = ageInTicks / 20.0F;
 
 		for (Piece piece : armor.extras()) {
-			if (piece.bone().slot != slot) continue;
+			if (piece.slot() != slot) continue;
 			ModelPart bone = piece.bone().part(model);
 			if (!bone.visible) continue;
 
 			ModelPart part = piece.part();
 			part.yRot = piece.baseYRot() + piece.spin() * seconds * Mth.DEG_TO_RAD;
+			part.xRot = piece.baseXRot() + piece.sway() * Mth.DEG_TO_RAD * Mth.sin(seconds * 1.7F + piece.phase());
 			part.y = piece.baseY() + piece.bob() * Mth.sin(seconds * 2.2F + piece.phase());
+
+			if (piece.orbitRadius() > 0.0F) {
+				float angle = seconds * piece.orbitSpeed() + piece.phase();
+				part.x = piece.baseX() + piece.orbitRadius() * Mth.cos(angle);
+				part.z = piece.baseZ() + piece.orbitRadius() * Mth.sin(angle);
+			}
 
 			poseStack.pushPose();
 			model.root().translateAndRotate(poseStack);

@@ -1020,6 +1020,24 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			}
 		}
 
+		// A three-quarter view, to see the 3D shapes from the side
+		setCamera(context, CameraType.THIRD_PERSON_FRONT);
+		context.runOnClient(client -> {
+			client.player.setYRot(-40.0F);
+			client.player.yBodyRot = -40.0F;
+			client.player.yHeadRot = -40.0F;
+		});
+
+		for (CustomArmors.Armor armor : CustomArmors.BUILT_IN) {
+			context.runOnClient(client -> {
+				for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).setLook(armor.lookId());
+			});
+			context.waitTicks(3);
+			context.takeScreenshot("35_custom_armor_" + armor.id() + "_angle");
+		}
+
+		context.runOnClient(VanityClientGameTest::faceForward);
+
 		// The glowing ones at night
 		setCamera(context, CameraType.THIRD_PERSON_FRONT);
 		singleplayer.getServer().runCommand("time set midnight");

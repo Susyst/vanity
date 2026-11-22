@@ -1,13 +1,13 @@
-"""Paints Vanity's built-in custom armor designs.
+"""Paints Vanity's built-in custom armors in HD (4 texels per armor pixel) and sculpts their 3D pieces.
 
 For each design this writes, under src/main/resources/assets/vanity/:
-  textures/entity/equipment/humanoid/<id>.png            helmet, chestplate, boots (64x32 armor layout)
+  textures/entity/equipment/humanoid/<id>.png            helmet, chestplate, boots (256x128 = 4x the 64x32 layout)
   textures/entity/equipment/humanoid_leggings/<id>.png   leggings
-  textures/entity/equipment/humanoid/<id>_glow.png       parts that glow in the dark (and the leggings one)
-  textures/entity/equipment/extras/<id>.png              texture for the 3D add-on pieces
-  armor_extras/<id>.json                                 the 3D add-on pieces (read by CustomArmors.java)
+  textures/entity/equipment/humanoid[_leggings]/<id>_glow.png   parts that glow in the dark
+  textures/entity/equipment/extras/<id>.png              texture for the 3D pieces (512x512 = 4x 128x128)
+  armor_extras/<id>.json                                 the 3D pieces (read by ArmorExtras.java)
   equipment/<id>.json                                    armor model layers
-plus the template and example copied into config/vanity/armors/examples/.
+plus custom_armors.json and the template/example for config/vanity/armors/examples/.
 
 Run: python3 tools/make_armor_textures.py
 """
@@ -16,12 +16,14 @@ import math
 import os
 import random
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "src", "main", "resources", "assets", "vanity")
+S = 4  # texels per armor pixel
 CLEAR = (0, 0, 0, 0)
+EXTRAS_SIZE = 128  # logical size of the 3D pieces' texture
 
-# Face rectangles (x, y, w, h) on the 64x32 armor layout
+# Face rectangles (x, y, w, h) on the 64x32 armor layout, in armor pixels
 HEAD = {"top": (8, 0, 8, 8), "bottom": (16, 0, 8, 8), "right": (0, 8, 8, 8), "front": (8, 8, 8, 8), "left": (16, 8, 8, 8), "back": (24, 8, 8, 8)}
 BODY = {"top": (20, 16, 8, 4), "bottom": (28, 16, 8, 4), "right": (16, 20, 4, 12), "front": (20, 20, 8, 12), "left": (28, 20, 4, 12), "back": (32, 20, 8, 12)}
 ARM = {"top": (44, 16, 4, 4), "bottom": (48, 16, 4, 4), "right": (40, 20, 4, 12), "front": (44, 20, 4, 12), "left": (48, 20, 4, 12), "back": (52, 20, 4, 12)}
@@ -29,482 +31,721 @@ LEG = {"top": (4, 16, 4, 4), "bottom": (8, 16, 4, 4), "right": (0, 20, 4, 12), "
 SIDES = ("right", "front", "left", "back")
 
 
+# ---------------------------------------------------------------------------------------------- colors
+
 def clamp(v):
     return max(0, min(255, int(round(v))))
 
 
-def rgb(c, a=255):
-    return (c[0], c[1], c[2], a)
+def rgba(c, a=255):
+    return (clamp(c[0]), clamp(c[1]), clamp(c[2]), a)
 
 
 def shade(c, f):
-    return (clamp(c[0] * f), clamp(c[1] * f), clamp(c[2] * f), 255)
+    return rgba((c[0] * f, c[1] * f, c[2] * f), c[3] if len(c) > 3 else 255)
 
 
 def mix(a, b, t):
-    return (clamp(a[0] + (b[0] - a[0]) * t), clamp(a[1] + (b[1] - a[1]) * t), clamp(a[2] + (b[2] - a[2]) * t), 255)
+    t = max(0.0, min(1.0, t))
+    return rgba((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t))
 
 
-def hexc(h):
-    return ((h >> 16) & 255, (h >> 8) & 255, h & 255)
+class Noise:
+    """Smooth value noise."""
 
+    def __init__(self, rng, cell):
+        self.rng, self.cell, self.grid = rng, cell, {}
+
+    def at(self, gx, gy):
+        if (gx, gy) not in self.grid:
+            self.grid[(gx, gy)] = self.rng.random()
+        return self.grid[(gx, gy)]
+
+    def __call__(self, x, y):
+        fx, fy = x / self.cell, y / self.cell
+        x0, y0 = math.floor(fx), math.floor(fy)
+        tx, ty = fx - x0, fy - y0
+        tx, ty = tx * tx * (3 - 2 * tx), ty * ty * (3 - 2 * ty)
+        a = self.at(x0, y0) + (self.at(x0 + 1, y0) - self.at(x0, y0)) * tx
+        b = self.at(x0, y0 + 1) + (self.at(x0 + 1, y0 + 1) - self.at(x0, y0 + 1)) * tx
+        return a + (b - a) * ty
+
+
+# ---------------------------------------------------------------------------------------------- face canvas
 
 class Face:
-    """One face of a box on the texture, drawn in its own coordinates (fx right, fy down)."""
+    """One face of a box, drawn in armor pixels (floats allowed) at S texels per pixel. rows limits the painted rows."""
 
-    def __init__(self, design, img, glow, rect, part, name, rows=None):
-        self.d, self.img, self.glow = design, img, glow
-        self.x0, self.y0, self.w, self.h = rect
+    def __init__(self, design, rect, part, name, rows=None, scale=S):
+        self.d = design
+        self.x0, self.y0, self.lw, self.lh = rect
         self.part, self.name = part, name
-        # rows limits which face rows are painted (boots use the bottom of the leg, leggings the top)
-        self.r0, self.r1 = rows if rows else (0, self.h)
+        self.r0, self.r1 = rows if rows else (0, self.lh)
+        self.s = scale
+        self.W, self.H = max(1, int(round(self.lw * scale))), max(1, int(round(self.lh * scale)))
+        self.img = Image.new("RGBA", (self.W, self.H), CLEAR)
+        self.glow = Image.new("RGBA", (self.W, self.H), CLEAR)
+        self.used_glow = False
 
-    def inside(self, fx, fy):
-        return 0 <= fx < self.w and self.r0 <= fy < self.r1
+    def X(self, x):
+        return x * self.s
 
-    def px(self, fx, fy, c):
-        if self.inside(fx, fy):
-            self.img.putpixel((self.x0 + fx, self.y0 + fy), rgb(c) if len(c) == 3 else c)
+    def Y(self, y):
+        return y * self.s
 
-    def get(self, fx, fy):
-        return self.img.getpixel((self.x0 + fx, self.y0 + fy))
+    def rows_px(self):
+        return int(round(self.r0 * self.s)), int(round(self.r1 * self.s))
 
-    def lit(self, fx, fy, c, strength=1.0):
-        """A pixel that glows: drawn on the texture and on the glow mask."""
-        if self.inside(fx, fy):
-            self.px(fx, fy, c)
-            if self.glow is not None:
-                self.glow.putpixel((self.x0 + fx, self.y0 + fy), rgb(c, clamp(255 * strength)))
+    def inside(self, px, py):
+        a, b = self.rows_px()
+        return 0 <= px < self.W and a <= py < b
 
-    def hline(self, fy, c, a=0, b=None):
-        for fx in range(a, self.w if b is None else b):
-            self.px(fx, fy, c)
+    def get(self, px, py):
+        return self.img.getpixel((px, py))
 
-    def vline(self, fx, c, a=None, b=None):
-        for fy in range(self.r0 if a is None else a, self.r1 if b is None else b):
-            self.px(fx, fy, c)
+    def put(self, px, py, c):
+        if self.inside(px, py):
+            self.img.putpixel((px, py), c)
 
-    def tint(self, fx, fy, f):
-        if self.inside(fx, fy):
-            self.px(fx, fy, shade(self.get(fx, fy), f))
+    def lit(self, px, py, c, strength=1.0):
+        if self.inside(px, py):
+            self.img.putpixel((px, py), rgba(c))
+            self.glow.putpixel((px, py), rgba(c, clamp(255 * strength)))
+            self.used_glow = True
 
+    def tint(self, px, py, f):
+        if self.inside(px, py):
+            c = self.get(px, py)
+            if c[3] > 0:
+                self.img.putpixel((px, py), shade(c, f))
+
+    def fill(self, material):
+        a, b = self.rows_px()
+        for py in range(a, b):
+            for px in range(self.W):
+                self.img.putpixel((px, py), material(self, px, py))
+
+    def mask(self, polygon=None, rect=None, ellipse=None):
+        m = Image.new("L", (self.W, self.H), 0)
+        dr = ImageDraw.Draw(m)
+        if rect:
+            x0, y0, x1, y1 = rect
+            dr.rectangle([self.X(x0), self.Y(y0), self.X(x1) - 1, self.Y(y1) - 1], fill=255)
+        if polygon:
+            dr.polygon([(self.X(x), self.Y(y)) for x, y in polygon], fill=255)
+        if ellipse:
+            x0, y0, x1, y1 = ellipse
+            dr.ellipse([self.X(x0), self.Y(y0), self.X(x1) - 1, self.Y(y1) - 1], fill=255)
+        return m
+
+    def plate(self, m, tint=1.0, light=1.28, dark=0.62, gap=0.55, color=None, material=None):
+        """A raised plate shaped like mask m: optional color/material, lit top-left edge, dark bottom-right edge, and a
+        dark gap just outside it."""
+        mp = m.load()
+        a, b = self.rows_px()
+        for py in range(a, b):
+            for px in range(self.W):
+                if not mp[px, py]:
+                    continue
+                if material:
+                    self.img.putpixel((px, py), material(self, px, py))
+                elif color:
+                    self.img.putpixel((px, py), rgba(color))
+                if tint != 1.0:
+                    self.tint(px, py, tint)
+                up = py == 0 or not mp[px, py - 1]
+                left = px == 0 or not mp[px - 1, py]
+                down = py == self.H - 1 or not mp[px, py + 1]
+                right = px == self.W - 1 or not mp[px + 1, py]
+                if up or left:
+                    self.tint(px, py, light)
+                elif down or right:
+                    self.tint(px, py, dark)
+        if gap is not None:
+            for py in range(a, b):
+                for px in range(self.W):
+                    if mp[px, py]:
+                        continue
+                    if any(0 <= px + dx < self.W and 0 <= py + dy < self.H and mp[px + dx, py + dy] for dx, dy in ((0, -1), (-1, 0))):
+                        self.tint(px, py, gap)
+
+    def _layer(self, draw_fn, glow):
+        tmp = Image.new("RGBA", (self.W, self.H), CLEAR)
+        draw_fn(ImageDraw.Draw(tmp))
+        a, b = self.rows_px()
+        src = tmp.load()
+        for py in range(a, b):
+            for px in range(self.W):
+                c = src[px, py]
+                if c[3]:
+                    if glow is not None:
+                        self.lit(px, py, c, glow)
+                    else:
+                        self.img.putpixel((px, py), c)
+
+    def line(self, points, color, width=1, glow=None):
+        self._layer(lambda dr: dr.line([(self.X(x), self.Y(y)) for x, y in points], fill=rgba(color), width=width), glow)
+
+    def poly(self, points, color, glow=None):
+        self._layer(lambda dr: dr.polygon([(self.X(x), self.Y(y)) for x, y in points], fill=rgba(color)), glow)
+
+    def oval(self, box, color, glow=None):
+        x0, y0, x1, y1 = box
+        self._layer(lambda dr: dr.ellipse([self.X(x0), self.Y(y0), self.X(x1) - 1, self.Y(y1) - 1], fill=rgba(color)), glow)
+
+    def clear(self, m):
+        mp = m.load()
+        for py in range(self.H):
+            for px in range(self.W):
+                if mp[px, py]:
+                    self.img.putpixel((px, py), CLEAR)
+                    self.glow.putpixel((px, py), CLEAR)
+
+    def engrave(self, points, depth=0.55, lift=1.25):
+        """A cut line: darker, with a light texel just under it."""
+        tmp = Image.new("L", (self.W, self.H), 0)
+        ImageDraw.Draw(tmp).line([(self.X(x), self.Y(y)) for x, y in points], fill=255, width=1)
+        t = tmp.load()
+        for py in range(self.H):
+            for px in range(self.W):
+                if t[px, py]:
+                    self.tint(px, py, depth)
+                    if py + 1 < self.H and not t[px, py + 1]:
+                        self.tint(px, py + 1, lift)
+
+    def rivet(self, x, y, color, r=0.42):
+        cx, cy = self.X(x), self.Y(y)
+        rr = r * self.s
+        for py in range(int(cy - rr) - 1, int(cy + rr) + 2):
+            for px in range(int(cx - rr) - 1, int(cx + rr) + 2):
+                dx, dy = px + 0.5 - cx, py + 0.5 - cy
+                dist = math.hypot(dx, dy)
+                if dist <= rr:
+                    f = 1.35 if dx + dy < -rr * 0.4 else (0.7 if dx + dy > rr * 0.5 else 1.0)
+                    self.put(px, py, shade(rgba(color), f))
+                elif dist <= rr + 0.9 and dx + dy > 0:
+                    self.tint(px, py, 0.7)
+
+
+# ---------------------------------------------------------------------------------------------- design base
 
 class Design:
-    """Base armor: plated pieces lit from the top left. Subclasses add their own material and details."""
-    visor = "open"
-    texture_noise = 0.05
+    """A full armor set. Subclasses set the palette, material, visor and details, and sculpt the 3D pieces."""
+    visor = "arch"
 
     def __init__(self, ident, name, pal, icon, seed, glow_pulse=False):
         self.id, self.name, self.p, self.icon = ident, name, pal, icon
         self.rng = random.Random(seed)
+        self.n1 = Noise(random.Random(seed * 3 + 1), 6.0)
+        self.n2 = Noise(random.Random(seed * 3 + 2), 2.0)
         self.glow_pulse = glow_pulse
         self.has_glow = False
 
-    # ---- material ----
+    # ---- materials: base color of a texel ----
 
-    def material(self, face, fx, fy):
-        """Base color of a pixel: a soft top-to-bottom gradient plus a little noise."""
-        h = max(1, face.r1 - face.r0 - 1)
-        t = (fy - face.r0) / h
-        c = mix(self.p["light"], self.p["mid"], min(1.0, t * 1.4))
-        return shade(c, 1.0 + self.rng.uniform(-self.texture_noise, self.texture_noise))
+    def material(self, f, px, py):
+        a, b = f.rows_px()
+        t = (py - a) / max(1, b - a - 1)
+        c = mix(self.p["light"], self.p["mid"], min(1.0, t * 1.3))
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        n = (self.n1(gx, gy) - 0.5) * 0.16 + (self.n2(gx, gy) - 0.5) * 0.06
+        return shade(c, 1.0 + n)
 
-    def fill(self, face):
-        for fy in range(face.r0, face.r1):
-            for fx in range(face.w):
-                face.px(fx, fy, self.material(face, fx, fy))
+    def trim_material(self, f, px, py):
+        c = self.p["trim"]
+        n = (self.n2(px + 300, py) - 0.5) * 0.12
+        return shade(c, 1.0 + n + (0.12 if (px + py) % 9 == 0 else 0))
 
-    def rim(self, face, color=None, sides=(True, True, True, True)):
-        c = color or self.p["rim"]
-        top, right, bottom, left = sides
-        for fx in range(face.w):
-            if top:
-                face.px(fx, face.r0, c)
-            if bottom:
-                face.px(fx, face.r1 - 1, shade(c, 0.85))
-        for fy in range(face.r0, face.r1):
-            if left:
-                face.px(0, fy, c)
-            if right:
-                face.px(face.w - 1, fy, shade(c, 0.85))
+    def under_material(self, f, px, py):
+        """Chainmail under the plates."""
+        c = shade(self.p["mid"], 0.55)
+        ring = (px % 3 == 1 and py % 2 == 0) or (px % 3 == 0 and py % 2 == 1)
+        return shade(c, 1.35 if ring else 0.85)
 
-    def bevel(self, face, x0, y0, x1, y1):
-        """Light top/left edge and dark bottom/right edge inside a plate (x1, y1 inclusive)."""
-        for fx in range(x0, x1 + 1):
-            face.tint(fx, y0, 1.18)
-            face.tint(fx, y1, 0.78)
-        for fy in range(y0 + 1, y1):
-            face.tint(x0, fy, 1.12)
-            face.tint(x1, fy, 0.82)
+    # ---- helpers ----
 
-    def seam(self, face, fy):
-        """A plate overlap: dark line with a light line just below."""
-        face.hline(fy, self.p["dark"])
-        for fx in range(face.w):
-            face.tint(fx, fy + 1, 1.15)
-
-    def rivet(self, face, fx, fy):
-        face.px(fx, fy, self.p["accent_light"])
-        face.px(fx + 1, fy + 1, shade(self.p["dark"], 1.0)) if face.inside(fx + 1, fy + 1) else None
+    def band(self, f, y0, y1, tint=1.0, trim=False, curve=0.0):
+        """A horizontal plate across the face; curve bends its bottom edge down in the middle."""
+        w = f.lw
+        pts = [(0, y0), (w, y0)]
+        steps = 8
+        for i in range(steps + 1):
+            x = w - w * i / steps
+            pts.append((x, y1 + curve * math.sin(math.pi * i / steps)))
+        f.plate(f.mask(polygon=pts), tint=tint, material=self.trim_material if trim else None)
 
     # ---- pieces ----
 
     def helmet(self, faces):
-        for name, face in faces.items():
+        p = self.p
+        for name, f in faces.items():
             if name == "bottom":
                 continue
-            self.fill(face)
-            self.rim(face)
+            f.fill(self.material)
             if name == "top":
-                face.vline(3, shade(self.p["light"], 1.15), 1, 7)
-                face.vline(4, shade(self.p["mid"], 0.95), 1, 7)
+                f.plate(f.mask(rect=(0.4, 0.4, 7.6, 7.6)), tint=1.05)
+                f.plate(f.mask(rect=(3.3, 0, 4.7, 8)), material=self.trim_material)
             elif name == "front":
-                self.bevel(face, 1, 1, 6, 6)
-                face.hline(2, shade(self.p["light"], 1.12), 1, 7)
-                self.helmet_visor(face)
+                f.plate(f.mask(rect=(0, 0, 8, 8)), gap=None)
+                f.plate(f.mask(rect=(0, 0, 8, 1.25)), material=self.trim_material)
+                for x in (1.0, 2.6, 4.0, 5.4, 7.0):
+                    f.rivet(x, 0.62, p["trim_light"], 0.3)
+                self.visor_front(f)
             elif name in ("right", "left"):
-                self.bevel(face, 1, 1, 6, 6)
-                face.hline(6, self.p["dark"], 1, 7)
-                self.rivet(face, 3, 3)
+                f.plate(f.mask(rect=(0, 0, 8, 8)), gap=None)
+                f.plate(f.mask(rect=(0, 0, 8, 1.25)), material=self.trim_material)
+                f.plate(f.mask(polygon=[(0.6, 5.6), (7.4, 5.0), (7.4, 7.5), (0.6, 7.5)]), tint=0.92)
+                f.plate(f.mask(ellipse=(2.6, 2.2, 5.4, 5.0)), tint=1.1)
+                f.rivet(4.0, 3.6, p["trim_light"], 0.45)
             elif name == "back":
-                self.seam(face, 4)
-                self.seam(face, 6)
+                f.plate(f.mask(rect=(0, 0, 8, 8)), gap=None)
+                f.plate(f.mask(rect=(0, 0, 8, 1.25)), material=self.trim_material)
+                self.band(f, 4.2, 5.6, 0.95, curve=0.3)
+                self.band(f, 5.6, 7.0, 0.9, curve=0.3)
+                self.band(f, 7.0, 8.0, 0.85)
         self.helmet_details(faces)
 
-    def helmet_visor(self, face):
-        if self.visor == "open":
-            for fx in range(2, 6):
-                for fy in range(3, 6):
-                    face.px(fx, fy, CLEAR)
-            for fy in range(3, 7):
-                face.px(1, fy, shade(self.p["mid"], 0.85))
-                face.px(6, fy, shade(self.p["mid"], 0.85))
-            face.hline(6, self.p["rim"], 2, 6)
+    def visor_front(self, f):
+        p = self.p
+        if self.visor == "arch":
+            f.plate(f.mask(polygon=[(0.8, 2.0), (7.2, 2.0), (7.2, 7.4), (0.8, 7.4)]), tint=0.96)
+            f.clear(f.mask(polygon=[(1.9, 6.4), (1.9, 3.6), (2.6, 2.6), (4.0, 2.2), (5.4, 2.6), (6.1, 3.6), (6.1, 6.4)]))
+            f.plate(f.mask(rect=(3.55, 1.4, 4.45, 4.4)), material=self.trim_material)
+        elif self.visor == "great":
+            f.plate(f.mask(polygon=[(0.5, 1.6), (7.5, 1.6), (7.5, 7.6), (0.5, 7.6)]), tint=0.98)
+            f.poly([(1.1, 3.0), (3.6, 3.0), (3.6, 3.65), (1.1, 3.65)], p["visor"])
+            f.poly([(4.4, 3.0), (6.9, 3.0), (6.9, 3.65), (4.4, 3.65)], p["visor"])
+            f.plate(f.mask(rect=(3.6, 1.4, 4.4, 7.6)), tint=1.15)
+            for gx in range(3):
+                for gy in range(3):
+                    f.oval((5.0 + gx * 0.6, 4.6 + gy * 0.7, 5.35 + gx * 0.6, 4.95 + gy * 0.7), p["visor"])
+            self.visor_glow(f)
         elif self.visor == "slit":
-            face.hline(3, self.p["visor"], 1, 7)
-            face.hline(4, shade(self.p["visor"], 0.7), 1, 7)
-            face.hline(5, shade(self.p["mid"], 0.8), 2, 6)
-            face.vline(3, shade(self.p["dark"], 1.0), 5, 7)
-            face.vline(4, shade(self.p["dark"], 1.0), 5, 7)
-            self.has_glow = True
-            for fx in (2, 5):
-                face.lit(fx, 3, self.p["glow"])
-        elif self.visor == "tvisor":
-            face.hline(3, self.p["visor"], 1, 7)
-            face.vline(3, self.p["visor"], 3, 7)
-            face.vline(4, self.p["visor"], 3, 7)
+            f.plate(f.mask(polygon=[(0.5, 1.6), (7.5, 1.6), (7.5, 7.6), (0.5, 7.6)]), tint=0.98)
+            f.poly([(0.9, 3.0), (7.1, 3.0), (6.6, 3.9), (1.4, 3.9)], p["visor"])
+            f.plate(f.mask(polygon=[(1.2, 4.6), (6.8, 4.6), (5.6, 7.4), (2.4, 7.4)]), tint=0.9)
+            for i in range(4):
+                f.engrave([(2.6 + i * 0.95, 5.0), (2.9 + i * 0.75, 7.0)])
+            self.visor_glow(f)
+        elif self.visor == "screen":
+            f.plate(f.mask(polygon=[(0.5, 1.6), (7.5, 1.6), (7.5, 7.6), (0.5, 7.6)]), tint=0.98)
+            f.plate(f.mask(polygon=[(0.7, 2.4), (7.3, 2.4), (6.8, 4.8), (1.2, 4.8)]), color=p["visor"], light=1.6, dark=0.8)
+            self.visor_glow(f)
+        elif self.visor == "kabuto":
+            f.clear(f.mask(polygon=[(1.4, 2.2), (6.6, 2.2), (6.6, 4.6), (1.4, 4.6)]))
+            f.plate(f.mask(polygon=[(1.0, 4.6), (7.0, 4.6), (6.4, 7.6), (1.6, 7.6)]), color=p["visor"], light=1.4)
+            f.line([(2.2, 5.6), (3.4, 5.3), (4.6, 5.3), (5.8, 5.6)], shade(p["visor"], 1.8), 2)
+            for i in range(3):
+                f.engrave([(2.4, 6.3 + i * 0.4), (5.6, 6.3 + i * 0.4)])
+
+    def visor_glow(self, f):
+        g = self.p["glow"]
+        if self.visor in ("great", "slit"):
+            f.oval((1.9, 3.0, 3.0, 3.8), g, glow=1.0)
+            f.oval((5.0, 3.0, 6.1, 3.8), g, glow=1.0)
+        elif self.visor == "screen":
+            for x in range(4, 27, 2):
+                f.lit(x, 13, g, 0.9)
+            f.line([(1.4, 3.1), (6.6, 3.1)], g, 1, glow=1.0)
 
     def helmet_details(self, faces):
         pass
 
     def chestplate(self, body, arm):
-        for name, face in body.items():
-            self.fill(face)
-            self.rim(face)
-            if name == "front":
-                # Two chest plates over banded abdomen plates
-                face.vline(3, shade(self.p["dark"], 1.0), 1, 6)
-                face.vline(4, shade(self.p["light"], 1.1), 1, 6)
-                self.bevel(face, 1, 1, 3, 5)
-                self.bevel(face, 4, 1, 6, 5)
-                for fy in (6, 8):
-                    self.seam(face, fy)
-                face.hline(10, self.p["dark"], 1, 7)
-            elif name == "back":
-                face.vline(3, shade(self.p["light"], 1.12), 1, 11)
-                face.vline(4, shade(self.p["dark"], 1.0), 1, 11)
-                for fy in (4, 7):
-                    self.seam(face, fy)
-            elif name in ("right", "left"):
-                for fy in (4, 7):
-                    self.seam(face, fy)
-            elif name == "top":
-                face.hline(1, shade(self.p["light"], 1.15), 1, 7)
-            elif name == "bottom":
-                for fy in range(face.r0, face.r1):
-                    face.hline(fy, shade(self.p["dark"], 1.1))
-        for name, face in arm.items():
-            self.fill(face)
+        p = self.p
+        for name, f in body.items():
+            f.fill(self.material)
+            if name == "bottom":
+                f.plate(f.mask(rect=(0, 0, 8, 4)), tint=0.55, gap=None)
+                continue
             if name == "top":
-                self.rim(face, self.p["accent"])
+                f.plate(f.mask(rect=(0, 0, 8, 4)), gap=None)
+                f.plate(f.mask(rect=(2.2, 0.6, 5.8, 3.4)), material=self.trim_material)
+                continue
+            if name == "front":
+                f.plate(f.mask(rect=(0, 0, 8, 1.2)), material=self.trim_material)
+                # Breastplate: two curved chest plates over banded abdomen plates
+                f.plate(f.mask(polygon=[(0.3, 1.2), (3.9, 1.2), (3.9, 5.4), (2.6, 6.1), (0.3, 5.6)]), tint=1.06)
+                f.plate(f.mask(polygon=[(4.1, 1.2), (7.7, 1.2), (7.7, 5.6), (5.4, 6.1), (4.1, 5.4)]), tint=1.06)
+                for i, (y0, y1) in enumerate(((6.1, 7.3), (7.3, 8.5), (8.5, 9.7))):
+                    self.band(f, y0, y1, 0.98 - 0.04 * i, curve=0.35)
+                f.plate(f.mask(rect=(0, 9.9, 8, 12)), material=self.trim_material, tint=0.95)
+                for x in (0.9, 7.1):
+                    f.rivet(x, 1.9, p["trim_light"], 0.35)
+            elif name == "back":
+                f.plate(f.mask(rect=(0, 0, 8, 1.2)), material=self.trim_material)
+                f.plate(f.mask(polygon=[(0.3, 1.2), (3.8, 1.2), (3.8, 6.2), (0.3, 5.4)]))
+                f.plate(f.mask(polygon=[(4.2, 1.2), (7.7, 1.2), (7.7, 5.4), (4.2, 6.2)]))
+                f.plate(f.mask(rect=(3.6, 1.2, 4.4, 9.8)), tint=1.18)
+                for y0, y1 in ((6.6, 7.9), (7.9, 9.2)):
+                    self.band(f, y0, y1, 0.95, curve=0.25)
+                f.plate(f.mask(rect=(0, 9.9, 8, 12)), material=self.trim_material, tint=0.9)
+            else:
+                f.plate(f.mask(rect=(0, 0, 4, 1.2)), material=self.trim_material)
+                for y0, y1 in ((1.2, 4.0), (4.0, 6.6), (6.6, 9.0), (9.0, 10.0)):
+                    self.band(f, y0, y1, 1.0 if y0 < 4 else 0.94)
+                f.plate(f.mask(rect=(0, 9.9, 4, 12)), material=self.trim_material, tint=0.9)
+        for name, f in arm.items():
+            f.fill(self.material)
+            if name == "top":
+                f.plate(f.mask(rect=(0, 0, 4, 4)), tint=1.08)
+                f.plate(f.mask(rect=(0, 0, 4, 0.8)), material=self.trim_material)
                 continue
             if name == "bottom":
-                for fy in range(face.r0, face.r1):
-                    face.hline(fy, self.p["dark"])
+                f.plate(f.mask(rect=(0, 0, 4, 4)), tint=0.5, gap=None)
                 continue
-            # Pauldron (rows 0-3), under-arm (4-6), bracer (7-11)
-            face.hline(0, self.p["accent"])
-            self.bevel(face, 0, 1, face.w - 1, 3)
-            face.hline(3, shade(self.p["accent"], 0.9))
-            for fy in range(4, 7):
-                for fx in range(face.w):
-                    face.px(fx, fy, shade(self.p["mid"], 0.72 + 0.06 * ((fx + fy) % 2)))
-            self.bevel(face, 0, 7, face.w - 1, 11)
-            face.hline(7, shade(self.p["light"], 1.1))
-            face.hline(11, self.p["rim"])
-            if name == "right":
-                self.rivet(face, 1, 1)
+            for i, (y0, y1) in enumerate(((0, 1.5), (1.5, 2.8), (2.8, 4.0))):
+                self.band(f, y0, y1, 1.08 - 0.05 * i, trim=(i == 0), curve=0.35)
+            f.plate(f.mask(rect=(0, 4.0, 4, 6.4)), material=self.under_material, light=1.0, dark=1.0)
+            if name in ("right", "left"):
+                f.plate(f.mask(ellipse=(0.6, 5.6, 3.4, 8.0)), tint=1.1)
+                f.rivet(2.0, 6.8, p["trim_light"], 0.38)
+            f.plate(f.mask(polygon=[(0, 7.4), (4, 7.2), (4, 11.0), (0, 11.0)]))
+            f.engrave([(0.2, 8.6), (3.8, 8.5)])
+            f.engrave([(0.2, 9.9), (3.8, 9.8)])
+            f.plate(f.mask(rect=(0, 11.0, 4, 12)), material=self.trim_material, tint=0.95)
         self.chest_details(body, arm)
 
     def chest_details(self, body, arm):
         pass
 
     def boots(self, leg):
-        for name, face in leg.items():
+        for name, f in leg.items():
             if name == "top":
                 continue
+            f.fill(self.material)
             if name == "bottom":
-                for fy in range(4):
-                    face.hline(fy, self.p["dark"])
+                f.plate(f.mask(rect=(0, 0, 4, 4)), tint=0.45, gap=None)
                 continue
-            self.fill(face)
-            face.hline(face.r0, self.p["accent"])
-            face.hline(face.r0 + 1, shade(self.p["light"], 1.12))
-            face.hline(face.r1 - 1, self.p["dark"])
-            face.hline(face.r1 - 2, shade(self.p["mid"], 0.8))
+            f.plate(f.mask(rect=(0, 6, 4, 6.9)), material=self.trim_material)
+            f.plate(f.mask(rect=(0, 6.9, 4, 9.3)), tint=1.02)
+            for y0, y1 in ((9.3, 10.3), (10.3, 11.2)):
+                self.band(f, y0, y1, 0.95, curve=0.2)
+            f.plate(f.mask(rect=(0, 11.2, 4, 12)), tint=0.55, gap=None)
             if name == "front":
-                for fx in range(face.w):
-                    face.tint(fx, face.r1 - 3, 1.2)
+                f.plate(f.mask(ellipse=(0.4, 8.4, 3.6, 11.6)), tint=1.12)
         self.boot_details(leg)
 
     def boot_details(self, leg):
         pass
 
     def leggings(self, body, leg):
-        for name, face in body.items():
+        p = self.p
+        for name, f in body.items():
             if name in ("top", "bottom"):
                 continue
-            self.fill(face)
-            # Belt
-            face.hline(0, self.p["belt"])
-            face.hline(1, shade(self.p["belt"], 0.8))
+            f.fill(self.material)
+            f.plate(f.mask(rect=(0, 0, f.lw, 1.4)), color=p["belt"], light=1.3, dark=0.7)
+            f.engrave([(0, 0.7), (f.lw, 0.7)], depth=0.8)
             if name == "front":
-                face.px(3, 0, self.p["accent_light"])
-                face.px(4, 0, self.p["accent_light"])
-                face.px(3, 1, self.p["accent"])
-                face.px(4, 1, self.p["accent"])
-                # Two hip plates
-                face.vline(3, self.p["dark"], 2, 6)
-                face.vline(4, self.p["dark"], 2, 6)
-                self.bevel(face, 0, 2, 2, 5)
-                self.bevel(face, 5, 2, 7, 5)
+                f.plate(f.mask(rect=(3.2, 0.1, 4.8, 1.35)), material=self.trim_material, light=1.5)
+                f.plate(f.mask(polygon=[(0.2, 1.4), (3.8, 1.4), (3.8, 5.2), (2.0, 5.9), (0.2, 5.2)]), tint=1.04)
+                f.plate(f.mask(polygon=[(4.2, 1.4), (7.8, 1.4), (7.8, 5.2), (6.0, 5.9), (4.2, 5.2)]), tint=1.04)
             else:
-                self.bevel(face, 0, 2, face.w - 1, 5)
-        for name, face in leg.items():
+                f.plate(f.mask(polygon=[(0.2, 1.4), (f.lw - 0.2, 1.4), (f.lw - 0.2, 5.4), (0.2, 5.4)]))
+        for name, f in leg.items():
             if name in ("top", "bottom"):
                 continue
-            self.fill(face)
-            # Thigh plate, knee guard, shin
-            self.bevel(face, 0, 0, face.w - 1, 4)
-            face.hline(5, self.p["accent"])
-            face.hline(6, shade(self.p["accent"], 0.75))
+            f.fill(self.material)
+            for i, (y0, y1) in enumerate(((0, 1.6), (1.6, 3.1), (3.1, 4.6))):
+                self.band(f, y0, y1, 1.04 - 0.03 * i, curve=0.2)
+            f.plate(f.mask(ellipse=(0.2, 4.4, 3.8, 7.2)), tint=1.12)
             if name == "front":
-                face.px(1, 5, self.p["accent_light"])
-                face.px(2, 5, self.p["accent_light"])
-            self.bevel(face, 0, 7, face.w - 1, 8)
+                f.rivet(2.0, 5.8, p["trim_light"], 0.42)
+            f.plate(f.mask(rect=(0, 7.0, 4, 9)), tint=0.96)
+            f.engrave([(0.3, 8.0), (3.7, 8.0)])
         self.legging_details(body, leg)
 
     def legging_details(self, body, leg):
         pass
 
-    # ---- 3D add-ons ----
+    # ---- 3D pieces ----
 
     def extras(self):
-        """3D pieces: dicts with bone, box [x, y, z, w, h, d], pivot, rot (degrees), paint, and optional glow, mirror,
-        spin (degrees per second around the pivot's Y), bob (pixels)."""
         return []
 
-    def paint_extra(self, face, paint, name):
-        """Paints one face of a 3D piece. paint: 'main', 'accent', 'dark', 'glow', 'plume', 'leaf', 'crystal'..."""
+    def paint_extra(self, f, paint):
+        """Paints one face of a 3D piece."""
         p = self.p
-        base = {"main": p["mid"], "accent": p["accent"], "dark": p["dark"], "glow": p["glow"], "light": p["light"]}.get(paint, p["mid"])
-        for fy in range(face.h):
-            for fx in range(face.w):
-                t = fy / max(1, face.h - 1)
-                c = mix(shade(base, 1.15), shade(base, 0.85), t)
-                if paint != "glow":
-                    c = shade(c, 1.0 + self.rng.uniform(-0.05, 0.05))
-                face.px(fx, fy, c)
-        if paint not in ("glow",) and face.w >= 3 and face.h >= 3:
-            for fx in range(face.w):
-                face.px(fx, 0, shade(base, 1.25))
-                face.px(fx, face.h - 1, shade(base, 0.7))
+        if paint == "glow":
+            g = p["glow"]
+            f.fill(lambda ff, px, py: mix(shade(g, 1.15), shade(g, 0.8), py / max(1, ff.H - 1)))
+            return
+        base = {"dark": p["dark"], "trim": p["trim"], "light": p["light"]}.get(paint)
+        if base is None:
+            f.fill(self.material)
+        else:
+            f.fill(lambda ff, px, py: shade(base, 1.0 + (self.n2(px + 900, py + ff.y0 * 4) - 0.5) * 0.12 + 0.18 * (1 - py / max(1, ff.H - 1))))
+        if f.W >= 4 and f.H >= 4:
+            for px in range(f.W):
+                f.tint(px, 0, 1.3)
+                f.tint(px, f.H - 1, 0.65)
+            for py in range(f.H):
+                f.tint(0, py, 1.15)
+                f.tint(f.W - 1, py, 0.75)
 
     # ---- output ----
 
     def paint(self):
-        a = Image.new("RGBA", (64, 32), CLEAR)
-        b = Image.new("RGBA", (64, 32), CLEAR)
-        ga = Image.new("RGBA", (64, 32), CLEAR)
-        gb = Image.new("RGBA", (64, 32), CLEAR)
-        self.helmet({n: Face(self, a, ga, r, "head", n) for n, r in HEAD.items()})
-        self.chestplate({n: Face(self, a, ga, r, "body", n) for n, r in BODY.items()},
-                        {n: Face(self, a, ga, r, "arm", n) for n, r in ARM.items()})
-        self.boots({n: Face(self, a, ga, r, "boots", n, None if n in ("top", "bottom") else (6, 12)) for n, r in LEG.items()})
-        self.leggings({n: Face(self, b, gb, r, "belt", n, None if n in ("top", "bottom") else (0, 6)) for n, r in BODY.items()},
-                      {n: Face(self, b, gb, r, "pants", n, None if n in ("top", "bottom") else (0, 9)) for n, r in LEG.items()})
-        return a, b, ga, gb
+        out = {k: Image.new("RGBA", (64 * S, 32 * S), CLEAR) for k in ("a", "b", "ga", "gb")}
+        groups = []
+
+        def faces(table, part, rows, target):
+            fs = {n: Face(self, r, part, n, None if n in ("top", "bottom") else rows) for n, r in table.items()}
+            groups.append((fs, target))
+            return fs
+
+        self.helmet(faces(HEAD, "head", None, "a"))
+        self.chestplate(faces(BODY, "body", None, "a"), faces(ARM, "arm", None, "a"))
+        self.boots(faces(LEG, "boots", (6, 12), "a"))
+        self.leggings(faces(BODY, "belt", (0, 6), "b"), faces(LEG, "pants", (0, 9), "b"))
+
+        for fs, target in groups:
+            for f in fs.values():
+                a, b = f.rows_px()
+                if b <= a:
+                    continue
+                out[target].alpha_composite(f.img.crop((0, a, f.W, b)), (f.x0 * S, f.y0 * S + a))
+                if f.used_glow:
+                    self.has_glow = True
+                    out["g" + target].alpha_composite(f.glow.crop((0, a, f.W, b)), (f.x0 * S, f.y0 * S + a))
+        return out["a"], out["b"], out["ga"], out["gb"]
 
 
-def box_faces(u, v, w, h, d):
-    """Texture rectangles of a box with Minecraft's box UV layout at (u, v)."""
-    return {"top": (u + d, v, w, d), "bottom": (u + d + w, v, w, d), "right": (u, v + d, d, h), "front": (u + d, v + d, w, h),
-            "left": (u + d + w, v + d, d, h), "back": (u + 2 * d + w, v + d, w, h)}
+# ---------------------------------------------------------------------------------------------- 3D sculpting helpers
+
+def euler_from_axes(xa, ya, za):
+    """Euler angles (degrees, ModelPart order R = Rz * Ry * Rx) for the rotation taking local x/y/z to xa/ya/za."""
+    b = math.asin(max(-1.0, min(1.0, -xa[2])))
+    a = math.atan2(ya[2], za[2])
+    c = math.atan2(xa[1], xa[0])
+    return [round(math.degrees(a), 3), round(math.degrees(b), 3), round(math.degrees(c), 3)]
 
 
-def pack_extras(design):
-    """Places every 3D piece's box on a 64x64 texture, paints it, and returns the JSON parts and the image."""
-    img = Image.new("RGBA", (64, 64), CLEAR)
-    parts = []
-    x = y = row_h = 0
-    for i, piece in enumerate(design.extras()):
-        w, h, d = (int(math.ceil(v)) for v in piece["box"][3:6])
-        need_w, need_h = 2 * (w + d), h + d
-        if x + need_w > 64:
-            x, y, row_h = 0, y + row_h, 0
-        if y + need_h > 64:
-            raise SystemExit(design.id + ": 3D pieces don't fit on the 64x64 texture")
-        for face_name, rect in box_faces(x, y, w, h, d).items():
-            if rect[2] > 0 and rect[3] > 0:
-                design.paint_extra(Face(design, img, None, rect, "extra", face_name), piece.get("paint", "main"), face_name)
-        part = {"name": piece.get("name", "p%d" % i), "bone": piece["bone"], "tex": [x, y], "box": piece["box"],
-                "pivot": piece.get("pivot", [0, 0, 0]), "rot": piece.get("rot", [0, 0, 0]), "glow": piece.get("paint") == "glow" or piece.get("glow", False),
-                "spin": piece.get("spin", 0), "bob": piece.get("bob", 0), "phase": piece.get("phase", 0)}
-        parts.append(part)
-        if piece.get("mirror"):
-            mx, my, mz, mw, mh, md = piece["box"]
-            px, py, pz = part["pivot"]
-            rx, ry, rz = part["rot"]
-            mirror_bone = {"right_arm": "left_arm", "right_leg": "left_leg"}.get(piece["bone"], piece["bone"])
-            if mirror_bone == piece["bone"]:
-                px = -px
-            parts.append(dict(part, name=part["name"] + "_m", bone=mirror_bone, box=[-(mx + mw), my, mz, mw, mh, md], pivot=[px, py, pz],
-                              rot=[rx, -ry, -rz], mirror=True, phase=part["phase"] + 1.7))
-        x += need_w
-        row_h = max(row_h, need_h)
-    return parts, img
+def norm(v):
+    length = math.sqrt(sum(x * x for x in v)) or 1.0
+    return [x / length for x in v]
+
+
+def cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def orient(d, roll_hint=(0.0, 0.0, -1.0)):
+    """Rotation turning a box that points up (local -y) to point along d."""
+    yaxis = norm([-d[0], -d[1], -d[2]])
+    c = cross(yaxis, roll_hint)
+    if sum(x * x for x in c) < 1e-6:
+        c = cross(yaxis, (1.0, 0.0, 0.0))
+    xaxis = norm(c)
+    zaxis = cross(xaxis, yaxis)
+    return euler_from_axes(xaxis, yaxis, zaxis)
+
+
+def segment(bone, pivot, d, length, w, t, paint, name, **extra):
+    """A box from pivot towards d: length long, w wide and t thick."""
+    piece = {"name": name, "bone": bone, "box": [-w / 2, -length, -t / 2, w, length, t], "pivot": list(pivot), "rot": orient(norm(d)), "paint": paint}
+    piece.update(extra)
+    return piece
+
+
+def chain(bone, start, dirs, lengths, widths, paint, name, tip_paint=None, overlap=0.35, **extra):
+    """A curved, tapering piece (horn, plume, antler) made of segments following dirs."""
+    pieces = []
+    pos = list(start)
+    for i, (d, length, w) in enumerate(zip(dirs, lengths, widths)):
+        d = norm(d)
+        last = i == len(dirs) - 1
+        pieces.append(segment(bone, pos, d, length + (0 if last else overlap), w, w, tip_paint if (last and tip_paint) else paint, "%s%d" % (name, i), **extra))
+        pos = [pos[k] + d[k] * length for k in range(3)]
+    return pieces
+
+
+def ring(bone, center, radius, count, thickness, paint, name, tilt=0.0, **extra):
+    """A ring of count segments around center, tilted forward by tilt degrees."""
+    pieces = []
+    seg_len = 2 * radius * math.tan(math.pi / count) + 0.3
+    ct, st = math.cos(math.radians(tilt)), math.sin(math.radians(tilt))
+
+    def tilted(v):
+        return [v[0], v[1] * ct - v[2] * st, v[1] * st + v[2] * ct]
+
+    for i in range(count):
+        ang = 2 * math.pi * (i + 0.5) / count
+        local = tilted([math.cos(ang) * radius, 0.0, math.sin(ang) * radius])
+        pos = [center[k] + local[k] for k in range(3)]
+        xaxis = norm(tilted([-math.sin(ang), 0.0, math.cos(ang)]))
+        yaxis = norm(tilted([0.0, 1.0, 0.0]))
+        zaxis = cross(xaxis, yaxis)
+        p = {"name": "%s%d" % (name, i), "bone": bone, "box": [-seg_len / 2, -thickness / 2, -thickness / 2, seg_len, thickness, thickness],
+             "pivot": pos, "rot": euler_from_axes(xaxis, yaxis, zaxis), "paint": paint}
+        p.update(extra)
+        pieces.append(p)
+    return pieces
+
+
+def plate_piece(bone, pivot, box, rot, paint, name, **extra):
+    p = {"name": name, "bone": bone, "box": box, "pivot": pivot, "rot": rot, "paint": paint}
+    p.update(extra)
+    return p
+
+
+def pauldron(bone, name, paint, top_paint, levels=3, width=6.4, depth=7.2, drop=1.1, tilt=-14, y=-3.6, x=-4.6):
+    """Layered shoulder plates, each smaller and lower, tilted down over the arm (mirrored onto the other arm)."""
+    pieces = []
+    for i in range(levels):
+        w = width - i * 0.7
+        dp = depth - i * 0.6
+        pieces.append(plate_piece(bone, [0, 0, 0], [x + i * 0.25, y + i * drop, -dp / 2, w, 1.3, dp], [0, 0, tilt - i * 4], top_paint if i == 0 else paint,
+                                  "%s%d" % (name, i), mirror=True))
+    return pieces
 
 
 # ---------------------------------------------------------------------------------------------- designs
 
-class Frost(Design):
-    texture_noise = 0.03
-
-    def material(self, face, fx, fy):
-        c = super().material(face, fx, fy)
-        # Faceted ice: diagonal bright streaks
-        if (fx + 2 * fy) % 6 == 0:
-            c = mix(c, (236, 250, 255), 0.4)
-        return c
-
-    def chest_details(self, body, arm):
-        f = body["front"]
-        self.has_glow = True
-        for fx, fy in ((3, 2), (4, 2), (3, 3), (4, 3)):
-            f.lit(fx, fy, (190, 245, 255) if (fx + fy) % 2 else (120, 220, 255))
-        for name, face in list(body.items()) + list(arm.items()):
-            for _ in range(face.w * (face.r1 - face.r0) // 16):
-                fx, fy = self.rng.randrange(face.w), self.rng.randrange(face.r0, face.r1)
-                face.lit(fx, fy, (240, 252, 255), 0.55)
-
-    def helmet_details(self, faces):
-        self.has_glow = True
-        for fx in (2, 3, 4, 5):
-            faces["front"].lit(fx, 1, (200, 246, 255), 0.8)
-
-    def extras(self):
-        crystal = "crystal"
-        return [
-            {"name": "crown_mid", "bone": "head", "box": [-1, -5, -1, 2, 5, 2], "pivot": [0, -9, -1], "rot": [-8, 45, 0], "paint": crystal, "glow": True},
-            {"name": "crown_side", "bone": "head", "box": [-1, -3, -1, 2, 3, 2], "pivot": [-3, -9, -1], "rot": [0, 45, 18], "paint": crystal, "glow": True, "mirror": True},
-            {"name": "shoulder_big", "bone": "right_arm", "box": [-1, -5, -1, 2, 5, 2], "pivot": [-2, -3, 0], "rot": [8, 45, 22], "paint": crystal, "glow": True, "mirror": True},
-            {"name": "shoulder_small", "bone": "right_arm", "box": [-0.5, -3, -0.5, 1, 3, 1], "pivot": [-3, -3, 2], "rot": [30, 0, 30], "paint": crystal, "glow": True, "mirror": True},
-        ]
-
-    def paint_extra(self, face, paint, name):
-        if paint == "crystal":
-            for fy in range(face.h):
-                for fx in range(face.w):
-                    t = fy / max(1, face.h - 1)
-                    c = mix((236, 252, 255), (96, 190, 240), t)
-                    if fx == 0:
-                        c = mix(c, (255, 255, 255), 0.5)
-                    face.px(fx, fy, c)
-            return
-        super().paint_extra(face, paint, name)
-
-
 class Obsidian(Design):
-    visor = "slit"
+    """Heavy knight: great helm, curved horns, layered spiked pauldrons, knee spikes, a tattered cape."""
+    visor = "great"
 
-    def material(self, face, fx, fy):
-        c = super().material(face, fx, fy)
-        # Glassy obsidian: rare purple sheen
-        if self.rng.random() < 0.08:
-            c = mix(c, (70, 40, 110), 0.6)
-        return c
+    def material(self, f, px, py):
+        c = super().material(f, px, py)
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        if (gx + gy * 2) % 23 < 2:
+            c = mix(c, (96, 70, 140), 0.45)
+        return mix(c, (60, 30, 96), self.n1(gx + 77, gy) * 0.25)
 
     def chest_details(self, body, arm):
-        self.has_glow = True
         f = body["front"]
-        # Glowing amethyst core and seams
-        for fx, fy, s in ((3, 2, 1.0), (4, 2, 1.0), (3, 3, 1.0), (4, 3, 1.0), (3, 1, 0.6), (4, 4, 0.6)):
-            f.lit(fx, fy, self.p["glow"] if s == 1.0 else shade(self.p["glow"], 0.8), s)
-        for name in ("front", "back"):
-            for fx in range(1, 7):
-                body[name].lit(fx, 6, shade(self.p["glow"], 0.75), 0.5)
+        g = self.p["glow"]
+        f.poly([(4.0, 2.2), (5.1, 3.6), (4.0, 5.0), (2.9, 3.6)], shade(g, 0.8), glow=1.0)
+        f.poly([(4.0, 2.7), (4.6, 3.6), (4.0, 4.5), (3.4, 3.6)], (255, 230, 255), glow=1.0)
+        for pts in (((3.0, 3.6), (1.8, 4.4), (1.2, 5.6)), ((5.0, 3.6), (6.2, 4.6), (6.6, 5.7)), ((4.0, 5.0), (4.2, 6.6))):
+            f.line(pts, shade(g, 0.85), 1, glow=0.8)
         for face in arm.values():
-            if face.name not in ("top", "bottom"):
-                face.hline(3, self.p["accent"])
-                for fx in range(face.w):
-                    face.lit(fx, 3, shade(self.p["glow"], 0.8), 0.55)
-
-    def helmet_details(self, faces):
-        self.has_glow = True
-        faces["front"].lit(3, 1, self.p["glow"])
-        faces["front"].lit(4, 1, self.p["glow"])
+            if face.name in SIDES:
+                face.line([(0, 2.8), (4, 2.8)], shade(g, 0.8), 1, glow=0.6)
 
     def legging_details(self, body, leg):
         for face in leg.values():
-            if face.name not in ("top", "bottom"):
-                for fx in range(face.w):
-                    face.lit(fx, 5, shade(self.p["glow"], 0.8), 0.5)
+            if face.name == "front":
+                face.oval((1.5, 5.3, 2.5, 6.3), self.p["glow"], glow=0.9)
 
     def extras(self):
-        return [
-            {"name": "horn_base", "bone": "head", "box": [-4, -1, -1, 4, 2, 2], "pivot": [-4.5, -7.5, 0], "rot": [0, 0, 28], "paint": "dark", "mirror": True},
-            {"name": "horn_tip", "bone": "head", "box": [-1, -4, -1, 2, 4, 2], "pivot": [-8, -9.5, 0], "rot": [0, 0, -12], "paint": "dark", "mirror": True},
-            {"name": "horn_point", "bone": "head", "box": [-0.5, -2, -0.5, 1, 2, 1], "pivot": [-8.3, -13, 0], "rot": [0, 0, -20], "paint": "glow", "mirror": True},
-            {"name": "pauldron", "bone": "right_arm", "box": [-4.5, -3.5, -3.5, 6, 3, 7], "pivot": [0, 0, 0], "rot": [0, 0, -10], "paint": "main", "mirror": True},
-            {"name": "pauldron_spike", "bone": "right_arm", "box": [-1, -3, -1, 2, 3, 2], "pivot": [-3, -3.5, 0], "rot": [0, 45, 20], "paint": "dark", "mirror": True},
-        ]
+        horn = chain("head", [-4.4, -6.6, -0.6], [[-1, -0.22, 0], [-0.82, -0.6, -0.05], [-0.38, -0.95, -0.2], [0.05, -1, -0.38], [0.32, -0.9, -0.45]],
+                     [2.4, 2.1, 2.0, 1.8, 1.4], [2.4, 2.0, 1.6, 1.15, 0.7], "dark", "horn", tip_paint="glow", mirror=True)
+        crest = [plate_piece("head", [0, -9.2, 0], [-0.4, -1.4, -4.8, 0.8, 1.4, 9.6], [0, 0, 0], "dark", "ridge")]
+        shoulders = pauldron("right_arm", "pauldron", "main", "trim", levels=3)
+        spikes = []
+        for i, z in enumerate((-2.4, 0.0, 2.4)):
+            spikes += chain("right_arm", [-3.6, -3.4, z], [[-0.55, -1, 0], [-0.4, -1, 0]], [1.6, 1.2], [1.4, 0.7], "dark", "spike%d_" % i, mirror=True)
+        knees = chain("right_leg", [0, 5.2, -2.6], [[0, -0.35, -1], [0, -0.6, -1]], [1.4, 1.1], [1.6, 0.8], "dark", "knee", slot="legs", mirror=True)
+        cape = [plate_piece("body", [0, 0.4, 2.7], [-4.6, 0, 0, 9.2, 13.5, 0.6], [9, 0, 0], "cloth", "cape", sway=4.0)]
+        for i, x in enumerate((-4.2, -1.8, 0.6, 3.0)):
+            cape.append(plate_piece("body", [0, 0.4, 2.7], [x, 13.4, 0, 1.4 + (i % 2) * 0.4, 1.6 + (i % 3) * 0.6, 0.6], [9, 0, 0], "cloth", "cape_tatter%d" % i, sway=4.0))
+        return horn + crest + shoulders + spikes + knees + cape
+
+    def paint_extra(self, f, paint):
+        if paint == "cloth":
+            f.fill(lambda ff, px, py: shade(mix((40, 14, 60), (18, 6, 28), py / max(1, ff.H - 1)), 1.0 + (self.n2(px + 40, py) - 0.5) * 0.25))
+            for py in range(0, f.H, 6):
+                for px in range(f.W):
+                    f.tint(px, py, 0.85)
+            if f.H > 20:
+                for px in range(f.W):
+                    f.lit(px, 2, (170, 100, 255), 0.6)
+            return
+        super().paint_extra(f, paint)
+
+
+class Frost(Design):
+    """Ice armor: faceted plates, frost, a crystal crown and crystal clusters, icicles."""
+    visor = "arch"
+
+    def material(self, f, px, py):
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        c = super().material(f, px, py)
+        facet = (math.floor((gx * 0.9 + gy * 0.5) / 7) + math.floor((gx * 0.4 - gy * 0.8) / 9)) % 3
+        c = shade(c, (1.12, 1.0, 0.9)[facet])
+        if self.n2(gx + 5, gy + 9) > 0.86:
+            c = mix(c, (245, 252, 255), 0.7)
+        return c
+
+    def chest_details(self, body, arm):
+        body["front"].poly([(4.0, 2.0), (4.9, 3.4), (4.0, 4.8), (3.1, 3.4)], (210, 248, 255), glow=1.0)
+        for face in list(body.values()) + list(arm.values()):
+            if face.name in SIDES:
+                for _ in range(3):
+                    x, y = self.rng.uniform(0.4, face.lw - 0.4), self.rng.uniform(1.4, face.lh - 2)
+                    face.line([(x, y), (x + self.rng.uniform(-0.8, 0.8), y + self.rng.uniform(0.6, 1.6))], (236, 250, 255), 1, glow=0.5)
+
+    def helmet_details(self, faces):
+        faces["front"].line([(1.0, 1.0), (7.0, 1.0)], (215, 248, 255), 1, glow=0.7)
+
+    def extras(self):
+        pieces = []
+        crown = [(0.0, -9.0, -1.2, [0.0, -1, -0.15], 4.6, 1.6), (-2.2, -8.9, -1.6, [-0.35, -1, -0.15], 3.4, 1.3), (2.2, -8.9, -1.6, [0.35, -1, -0.15], 3.4, 1.3),
+                 (-3.6, -8.6, -0.4, [-0.6, -1, 0.0], 2.4, 1.0), (3.6, -8.6, -0.4, [0.6, -1, 0.0], 2.4, 1.0), (-1.2, -8.8, 1.4, [-0.15, -1, 0.4], 2.6, 1.1),
+                 (1.3, -8.8, 1.6, [0.2, -1, 0.45], 2.2, 1.0)]
+        for i, (x, y, z, d, length, w) in enumerate(crown):
+            pieces += chain("head", [x, y, z], [d, d], [length * 0.6, length * 0.4], [w, w * 0.55], "crystal", "crown%d_" % i, glow=True)
+        cluster = [(-3.0, -3.2, -1.0, [-0.5, -1, -0.2], 3.2, 1.4), (-2.0, -3.4, 0.8, [-0.2, -1, 0.3], 2.4, 1.1), (-3.8, -2.6, 1.2, [-0.9, -0.8, 0.3], 2.0, 0.9),
+                   (-1.4, -3.3, -1.6, [-0.1, -1, -0.4], 1.6, 0.8)]
+        for i, (x, y, z, d, length, w) in enumerate(cluster):
+            pieces += chain("right_arm", [x, y, z], [d, d], [length * 0.6, length * 0.4], [w, w * 0.5], "crystal", "shoulder%d_" % i, glow=True, mirror=True)
+        pieces += chain("right_arm", [-3.2, 8.0, 0], [[-1, -0.25, 0]], [1.6], [0.8], "crystal", "forearm", glow=True, mirror=True)
+        for i, x in enumerate((-3.0, -1.4, 0.4, 2.2, 3.4)):
+            pieces.append(segment("body", [x, 11.8, -2.6], [0, 1, -0.05], 1.2 + (i % 3) * 0.5, 0.7, 0.7, "crystal", "icicle%d" % i, glow=True))
+        pieces += chain("right_leg", [-1.6, 9.6, -2.6], [[-0.4, -1, -0.4]], [1.4], [0.8], "crystal", "boot", glow=True, slot="feet", mirror=True)
+        return pieces
+
+    def paint_extra(self, f, paint):
+        if paint == "crystal":
+            def ice(ff, px, py):
+                c = mix((240, 253, 255), (96, 186, 238), py / max(1, ff.H - 1))
+                if px == 0 or (px + py) % 5 == 0:
+                    c = mix(c, (255, 255, 255), 0.45)
+                return c
+            f.fill(ice)
+            return
+        super().paint_extra(f, paint)
 
 
 class Ember(Design):
-    def material(self, face, fx, fy):
-        c = super().material(face, fx, fy)
-        return shade(c, 0.92 + 0.12 * ((fx * 7 + fy * 3) % 5 == 0))
+    """Charred plates with glowing lava cracks, swept flame spikes, molten shoulder horns, a magma core."""
+    visor = "slit"
 
-    def cracks(self, face, n):
-        self.has_glow = True
+    def material(self, f, px, py):
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        c = super().material(f, px, py)
+        c = shade(c, 0.85 + self.n2(gx * 1.7, gy * 1.7) * 0.3)
+        heat = self.n1(gx * 0.7 + 11, gy * 0.7)
+        if heat > 0.72:
+            c = mix(c, (120, 40, 14), (heat - 0.72) * 2.5)
+        return c
+
+    def cracks(self, f, n):
         for _ in range(n):
-            fx, fy = self.rng.randrange(1, max(2, face.w - 1)), self.rng.randrange(face.r0 + 1, max(face.r0 + 2, face.r1 - 1))
-            for step in range(self.rng.randint(3, 6)):
-                if not face.inside(fx, fy):
-                    break
-                hot = step % 3 == 0
-                face.lit(fx, fy, (255, 226, 120) if hot else (255, 120, 30), 1.0 if hot else 0.85)
-                fx += self.rng.choice((-1, 0, 1))
-                fy += self.rng.choice((0, 1, 1))
+            x, y = self.rng.uniform(0.3, f.lw - 0.3), self.rng.uniform(max(f.r0, 0.5), max(f.r0 + 0.6, f.r1 - 0.5))
+            pts = [(x, y)]
+            for _ in range(self.rng.randint(3, 6)):
+                x += self.rng.uniform(-0.9, 0.9)
+                y += self.rng.uniform(0.2, 1.0)
+                pts.append((x, y))
+            f.line(pts, (255, 110, 26), 2, glow=0.9)
+            f.line(pts, (255, 222, 120), 1, glow=1.0)
 
     def helmet_details(self, faces):
-        for name in ("front", "right", "left", "back", "top"):
-            self.cracks(faces[name], 1 if name == "front" else 2)
+        for name in ("right", "left", "back", "top"):
+            self.cracks(faces[name], 2)
+        self.cracks(faces["front"], 1)
 
     def chest_details(self, body, arm):
         for face in list(body.values()) + list(arm.values()):
             if face.name != "bottom":
-                self.cracks(face, max(1, face.w * face.h // 30))
+                self.cracks(face, max(1, int(face.lw * face.lh / 14)))
+        f = body["front"]
+        f.oval((2.9, 2.2, 5.1, 4.4), (255, 140, 40), glow=1.0)
+        f.oval((3.4, 2.7, 4.6, 3.9), (255, 236, 150), glow=1.0)
 
     def boot_details(self, leg):
         for face in leg.values():
@@ -517,40 +758,48 @@ class Ember(Design):
                 self.cracks(face, 1)
 
     def extras(self):
-        return [
-            {"name": "flame_front", "bone": "head", "box": [-1, -4, -1, 2, 4, 2], "pivot": [-2.5, -8.5, -2], "rot": [30, 0, 22], "paint": "dark", "mirror": True},
-            {"name": "flame_front_tip", "bone": "head", "box": [-0.5, -2, -0.5, 1, 2, 1], "pivot": [-4.2, -11.3, 0.1], "rot": [30, 0, 22], "paint": "glow", "mirror": True},
-            {"name": "flame_back", "bone": "head", "box": [-1, -3, -1, 2, 3, 2], "pivot": [-2, -8.5, 2], "rot": [50, 0, 18], "paint": "dark", "mirror": True},
-            {"name": "flame_back_tip", "bone": "head", "box": [-0.5, -2, -0.5, 1, 2, 1], "pivot": [-3, -10.4, 4.2], "rot": [50, 0, 18], "paint": "glow", "mirror": True},
-            {"name": "spike_a", "bone": "right_arm", "box": [-0.5, -4, -0.5, 1, 4, 1], "pivot": [-3, -3, -1.5], "rot": [0, 0, 25], "paint": "dark", "mirror": True},
-            {"name": "spike_b", "bone": "right_arm", "box": [-0.5, -5, -0.5, 1, 5, 1], "pivot": [-2.5, -3, 0.5], "rot": [0, 0, 18], "paint": "dark", "mirror": True},
-            {"name": "spike_tip", "bone": "right_arm", "box": [-0.5, -1, -0.5, 1, 1, 1], "pivot": [-4.1, -7.4, 0.5], "rot": [0, 0, 18], "paint": "glow", "mirror": True},
-        ]
+        pieces = []
+        for i, (z, tilt) in enumerate(((-2.4, 0.15), (0.0, 0.35), (2.4, 0.6))):
+            pieces += chain("head", [-3.0 + i * 0.4, -8.6, z], [[-0.45, -1, tilt], [-0.35, -0.9, tilt + 0.45], [-0.2, -0.7, tilt + 0.9]], [1.8, 1.4, 1.1],
+                            [1.5, 1.1, 0.6], "dark", "flame%d_" % i, tip_paint="glow", mirror=True)
+        for i, (z, length) in enumerate(((-1.8, 2.6), (0.2, 3.4), (2.0, 2.2))):
+            pieces += chain("right_arm", [-3.4, -3.4, z], [[-0.7, -1, 0], [-0.35, -1, 0.1]], [length * 0.6, length * 0.4], [1.4, 0.7], "dark", "spike%d_" % i,
+                            tip_paint="glow", mirror=True)
+        pieces += pauldron("right_arm", "pauldron", "main", "dark", levels=2, width=6.0, depth=6.8)
+        pieces.append(plate_piece("body", [0, 3.4, -2.9], [-1.4, -1.4, -0.6, 2.8, 2.8, 0.6], [0, 0, 45], "glow", "core"))
+        for i, x in enumerate((-3.8, -0.9, 1.9)):
+            pieces.append(plate_piece("body", [0, 10.6, -2.7], [x, 0, -0.3, 2.6, 3.4, 0.6], [-10, 0, 0], "main", "tasset%d" % i, slot="legs"))
+        return pieces
 
 
 class Verdant(Design):
-    def material(self, face, fx, fy):
-        c = super().material(face, fx, fy)
-        # Moss: clumps of lighter green
-        if self.rng.random() < 0.18:
-            c = mix(c, (120, 180, 70), 0.5)
-        return c
+    """Living wood and moss: bark plates, vines, branching antlers with leaves, mushrooms, a leaf skirt."""
+    visor = "arch"
 
-    def vines(self, face):
+    def material(self, f, px, py):
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        moss = self.n1(gx * 0.8, gy * 0.8)
+        bark = shade(self.p["bark"], 0.85 + 0.3 * ((gx + int(self.n2(gx, gy) * 6)) % 5 == 0))
+        return mix(bark, shade(self.p["mid"], 0.9 + self.n2(gx * 2, gy * 2) * 0.3), min(1.0, max(0.0, (moss - 0.32) * 3)))
+
+    def trim_material(self, f, px, py):
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        return shade(self.p["bark"], 0.8 + 0.35 * (gx % 4 == 0) + (self.n2(gx, gy) - 0.5) * 0.2)
+
+    def vines(self, f):
         phase = self.rng.random() * 6
-        for fy in range(face.r0, face.r1):
-            fx = int(round((face.w - 1) / 2 + (face.w / 2 - 1) * math.sin(fy * 0.9 + phase)))
-            face.px(fx, fy, self.p["accent"])
-            if self.rng.random() < 0.3:
-                face.px(fx + 1, fy, (164, 226, 96))
+        pts = [(f.lw / 2 + (f.lw / 2 - 0.5) * math.sin(y * 0.8 + phase), y) for y in [f.r0 + i * 0.25 for i in range(int((f.r1 - f.r0) * 4))]]
+        f.line(pts, (88, 150, 56), 2)
+        for i in range(0, len(pts), 6):
+            x, y = pts[i]
+            f.poly([(x, y), (x + 0.9, y - 0.4), (x + 1.2, y + 0.3)], (130, 200, 80))
 
     def chest_details(self, body, arm):
         for face in list(body.values()) + list(arm.values()):
-            if face.name in SIDES and face.h >= 8:
+            if face.name in SIDES and face.lh >= 8:
                 self.vines(face)
-        self.has_glow = True
-        for fx, fy in ((2, 3), (5, 4), (3, 9)):
-            body["front"].lit(fx, fy, (180, 255, 140), 0.6)
+        for x, y in ((2.0, 3.0), (6.0, 4.2), (3.0, 8.6), (5.6, 9.0)):
+            body["front"].oval((x - 0.3, y - 0.3, x + 0.3, y + 0.3), (190, 255, 150), glow=0.65)
 
     def legging_details(self, body, leg):
         for face in leg.values():
@@ -558,242 +807,323 @@ class Verdant(Design):
                 self.vines(face)
 
     def extras(self):
-        return [
-            {"name": "leaf_front", "bone": "head", "box": [-1.5, -4, -0.5, 3, 4, 1], "pivot": [-2, -8.6, -4], "rot": [-20, 0, 25], "paint": "leaf", "mirror": True},
-            {"name": "leaf_side", "bone": "head", "box": [-0.5, -4, -1.5, 1, 4, 3], "pivot": [-4.6, -8.6, 0.5], "rot": [0, 0, 40], "paint": "leaf", "mirror": True},
-            {"name": "leaf_back", "bone": "head", "box": [-1.5, -3, -0.5, 3, 3, 1], "pivot": [0, -8.6, 4.4], "rot": [30, 0, 0], "paint": "leaf"},
-            {"name": "sprout", "bone": "head", "box": [-0.5, -3, -0.5, 1, 3, 1], "pivot": [0.5, -9, -0.5], "rot": [8, 0, -10], "paint": "accent"},
-            {"name": "sprout_leaf", "bone": "head", "box": [-1, -1, -0.5, 2, 1, 1], "pivot": [0.9, -12, -0.4], "rot": [0, 0, -10], "paint": "leaf"},
-            {"name": "shoulder_leaf", "bone": "right_arm", "box": [-0.5, -3, -1.5, 1, 3, 3], "pivot": [-3.6, -3, 0], "rot": [0, 0, 35], "paint": "leaf", "mirror": True},
-            {"name": "shoulder_leaf_b", "bone": "right_arm", "box": [-1.5, -3, -0.5, 3, 3, 1], "pivot": [-2, -3, -2.6], "rot": [-30, 0, 20], "paint": "leaf", "mirror": True},
-            {"name": "mushroom_stem", "bone": "right_arm", "box": [-0.5, -2, -0.5, 1, 2, 1], "pivot": [-1, -3, 1.5], "rot": [0, 0, 0], "paint": "light"},
-            {"name": "mushroom_cap", "bone": "right_arm", "box": [-1.5, -1, -1.5, 3, 1, 3], "pivot": [-1, -5, 1.5], "rot": [0, 0, 0], "paint": "glow"},
-        ]
+        pieces = []
+        pieces += chain("head", [-3.2, -8.6, -0.6], [[-0.5, -1, 0.1], [-0.8, -0.8, 0.2], [-0.4, -1, 0.3]], [1.8, 1.6, 1.4], [1.1, 0.9, 0.7], "bark", "antler", mirror=True)
+        pieces += chain("head", [-4.3, -10.4, -0.4], [[-0.1, -1, -0.5], [0.15, -1, -0.6]], [1.2, 1.0], [0.8, 0.55], "bark", "fork", mirror=True)
+        for i, (pos, d) in enumerate((([-6.0, -12.8, 0.9], [-0.6, -0.5, 0.5]), ([-4.2, -12.6, -1.6], [0.0, -0.7, -0.7]), ([-2.6, -9.8, -2.4], [-0.3, -0.3, -1]))):
+            pieces.append(segment("head", pos, d, 1.8, 1.6, 0.4, "leaf", "antler_leaf%d" % i, mirror=True))
+        for i in range(7):
+            a = -math.pi * 0.85 + i * math.pi * 1.7 / 6
+            pieces.append(segment("head", [math.sin(a) * 4.4, -8.8, -math.cos(a) * 4.4], [math.sin(a) * 0.7, -1, -math.cos(a) * 0.7], 2.2, 2.0, 0.4, "leaf", "crown%d" % i))
+        pieces += pauldron("right_arm", "moss", "main", "bark", levels=2, width=6.0, depth=6.6)
+        for i, (x, z, s) in enumerate(((-1.6, 1.6, 1.0), (-2.8, -1.4, 0.7))):
+            pieces.append(segment("right_arm", [x, -3.8, z], [0, -1, 0], 1.4 * s, 0.6 * s, 0.6 * s, "light", "stem%d" % i, mirror=True))
+            pieces.append(plate_piece("right_arm", [x, -3.8 - 1.4 * s, z], [-1.4 * s, -0.8 * s, -1.4 * s, 2.8 * s, 0.8 * s, 2.8 * s], [0, 0, 0], "glow", "cap%d" % i, mirror=True))
+        for i, z in enumerate((-2.0, 0.6, 2.6)):
+            pieces.append(segment("right_arm", [-4.4, -2.6, z], [-0.8, -0.3, z * 0.15], 2.2, 1.8, 0.4, "leaf", "shoulder_leaf%d" % i, mirror=True))
+        for i in range(6):
+            a = -math.pi * 0.9 + i * math.pi * 1.8 / 5
+            pieces.append(segment("body", [math.sin(a) * 4.0, 11.6, -math.cos(a) * 2.4], [math.sin(a) * 0.4, 1, -math.cos(a) * 0.4], 2.4, 2.0, 0.4, "leaf", "skirt%d" % i, slot="legs"))
+        return pieces
 
-    def paint_extra(self, face, paint, name):
+    def paint_extra(self, f, paint):
         if paint == "leaf":
-            for fy in range(face.h):
-                for fx in range(face.w):
-                    edge = fx in (0, face.w - 1) or fy in (0, face.h - 1)
-                    c = (74, 140, 52) if edge else (108, 182, 70)
-                    if (fx + fy) % 3 == 0 and not edge:
-                        c = (140, 206, 92)
-                    face.px(fx, fy, c)
-            for fx, fy in ((0, 0), (face.w - 1, 0)):
-                face.px(fx, fy, CLEAR)
+            def leaf(ff, px, py):
+                c = mix((150, 214, 92), (64, 128, 46), py / max(1, ff.H - 1))
+                if abs(px - ff.W / 2) < 0.8:
+                    c = shade(c, 0.8)
+                return c
+            f.fill(leaf)
+            if f.W > 3:
+                for py in range(f.H):
+                    for px in range(f.W):
+                        edge = abs(px + 0.5 - f.W / 2) / (f.W / 2)
+                        if edge > 1.0 - 0.6 * math.sin(math.pi * (py + 0.5) / f.H):
+                            f.put(px, py, CLEAR)
             return
-        super().paint_extra(face, paint, name)
+        if paint == "bark":
+            f.fill(lambda ff, px, py: shade(self.p["bark"], 0.8 + 0.35 * (px % 3 == 0) + (self.n2(px + 70, py * 0.5) - 0.5) * 0.3))
+            return
+        super().paint_extra(f, paint)
 
 
 class Royal(Design):
-    texture_noise = 0.025
+    """Polished silver with gold filigree, a tall curved plume, layered gold-rimmed pauldrons, a royal cape."""
+    visor = "arch"
 
-    def material(self, face, fx, fy):
-        c = super().material(face, fx, fy)
-        # Polished: a bright diagonal reflection
-        if (fx - fy) % 7 == 0:
-            c = mix(c, (255, 255, 255), 0.35)
-        return c
+    def material(self, f, px, py):
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        return shade(super().material(f, px, py), 1.0 + 0.1 * math.sin((gx - gy * 0.8) * 0.18))
+
+    def filigree(self, f, x0, y0, x1, y1):
+        steps = 16
+        pts = [(x0 + (x1 - x0) * i / steps, (y0 + y1) / 2 + (y1 - y0) / 2 * math.sin(i * math.pi / 4)) for i in range(steps + 1)]
+        f.line(pts, self.p["trim"], 1)
+        for i in range(0, steps + 1, 4):
+            x, y = pts[i]
+            f.oval((x - 0.22, y - 0.22, x + 0.22, y + 0.22), self.p["trim_light"])
 
     def chest_details(self, body, arm):
         f = body["front"]
-        gold, deep = self.p["accent"], shade(self.p["accent"], 0.7)
-        # Gold emblem: a crown over a shield
-        for fx, fy in ((2, 2), (3, 1), (4, 1), (5, 2), (3, 2), (4, 2)):
-            f.px(fx, fy, gold)
-        for fx, fy in ((3, 3), (4, 3), (3, 4), (4, 4)):
-            f.px(fx, fy, (40, 70, 160))
-        f.px(3, 3, (90, 130, 220))
-        for fy in range(1, 11):
-            for face in (body["right"], body["left"]):
-                face.px(1, fy, shade(gold, 0.9))
+        g, gl = self.p["trim"], self.p["trim_light"]
+        f.plate(f.mask(polygon=[(2.6, 2.2), (5.4, 2.2), (5.4, 4.4), (4.0, 5.6), (2.6, 4.4)]), color=(36, 60, 150), light=1.5, dark=0.6)
+        f.poly([(2.9, 1.8), (3.4, 1.2), (3.8, 1.7), (4.2, 1.1), (4.6, 1.7), (5.0, 1.2), (5.2, 1.9), (2.9, 1.9)], gl)
+        f.line([(2.6, 2.2), (5.4, 2.2), (5.4, 4.4), (4.0, 5.6), (2.6, 4.4), (2.6, 2.2)], g, 1)
+        f.oval((3.6, 3.0, 4.4, 3.8), gl)
+        self.filigree(f, 0.4, 10.4, 7.6, 11.4)
+        self.filigree(body["back"], 0.4, 10.4, 7.6, 11.4)
         for face in arm.values():
             if face.name in SIDES:
-                face.hline(0, gold)
-                face.hline(3, deep)
-                face.hline(7, gold)
+                self.filigree(face, 0.2, 11.1, 3.8, 11.9)
 
     def helmet_details(self, faces):
-        gold = self.p["accent"]
-        for name in ("top", "front", "back"):
-            face = faces[name]
-            face.vline(3, gold, 0, 8 if name != "front" else 3)
-            face.vline(4, shade(gold, 1.1), 0, 8 if name != "front" else 3)
-        faces["front"].hline(6, gold, 1, 7)
-
-    def boot_details(self, leg):
-        for face in leg.values():
-            if face.name in SIDES:
-                face.hline(face.r0, self.p["accent"])
-
-    def legging_details(self, body, leg):
-        for face in leg.values():
-            if face.name in SIDES:
-                face.hline(5, self.p["accent"])
+        for name in ("right", "left"):
+            self.filigree(faces[name], 0.4, 6.3, 7.6, 7.2)
 
     def extras(self):
-        return [
-            {"name": "plume", "bone": "head", "box": [-1, -3, -4, 2, 3, 8], "pivot": [0, -9, 0.5], "rot": [0, 0, 0], "paint": "plume"},
-            {"name": "plume_tail", "bone": "head", "box": [-1, -2, 0, 2, 2, 5], "pivot": [0, -10.5, 4], "rot": [-30, 0, 0], "paint": "plume"},
-            {"name": "pauldron", "bone": "right_arm", "box": [-4.5, -3.5, -3.5, 6, 3, 7], "pivot": [0, 0, 0], "rot": [0, 0, -14], "paint": "main", "mirror": True},
-            {"name": "pauldron_rim", "bone": "right_arm", "box": [-4.6, -1, -3.6, 6, 1, 7], "pivot": [0, 0, 0], "rot": [0, 0, -14], "paint": "accent", "mirror": True},
-        ]
+        pieces = chain("head", [0, -9.0, -2.6], [[0, -1, -0.5], [0, -1, 0.1], [0, -0.6, 0.8], [0, 0.1, 1], [0, 0.6, 0.8]], [1.8, 1.8, 1.8, 1.7, 1.6],
+                       [1.6, 1.8, 1.8, 1.6, 1.2], "plume", "plume")
+        pieces.append(plate_piece("head", [0, -9.1, 0], [-0.6, -1.2, -4.0, 1.2, 1.2, 8.0], [0, 0, 0], "trim", "crest_base"))
+        pieces += pauldron("right_arm", "pauldron", "main", "trim", levels=3, width=6.6, depth=7.4)
+        for i in range(3):
+            pieces.append(plate_piece("right_arm", [0, 0, 0], [-4.75 + i * 0.25, -3.6 + i * 1.1 + 1.15, -3.75 + i * 0.3, 6.6 - i * 0.7, 0.4, 7.5 - i * 0.6], [0, 0, -14 - i * 4],
+                                      "trim", "pauldron_rim%d" % i, mirror=True))
+        pieces.append(plate_piece("body", [0, 0.2, 2.8], [-4.8, 0, 0, 9.6, 14.5, 0.5], [7, 0, 0], "cape", "cape", sway=3.0))
+        pieces.append(plate_piece("body", [0, 0.2, 2.8], [-4.9, -0.4, -0.2, 9.8, 1.2, 0.9], [7, 0, 0], "trim", "cape_clasp", sway=3.0))
+        for i, x in enumerate((-3.6, -1.2, 1.2)):
+            pieces.append(plate_piece("body", [0, 10.4, -2.7], [x, 0, -0.3, 2.4, 3.2, 0.5], [-8, 0, 0], "main", "tasset%d" % i, slot="legs"))
+        return pieces
 
-    def paint_extra(self, face, paint, name):
+    def paint_extra(self, f, paint):
         if paint == "plume":
-            for fy in range(face.h):
-                for fx in range(face.w):
-                    c = (196, 30, 46) if (fx + fy) % 3 else (150, 18, 34)
-                    if fy == 0:
-                        c = (232, 70, 80)
-                    face.px(fx, fy, c)
+            f.fill(lambda ff, px, py: shade(mix((236, 72, 82), (150, 16, 32), py / max(1, ff.H - 1)), 0.85 + 0.3 * ((px + py) % 3 == 0)))
             return
-        super().paint_extra(face, paint, name)
+        if paint == "cape":
+            f.fill(lambda ff, px, py: shade(mix((54, 70, 170), (24, 30, 96), py / max(1, ff.H - 1)), 1.0 + (self.n2(px, py) - 0.5) * 0.15))
+            if f.H > 20 and f.W > 20:
+                for px in range(f.W):
+                    for py in (f.H - 6, f.H - 5):
+                        f.put(px, py, rgba(self.p["trim"]))
+                for py in range(f.H):
+                    for px in (2, 3, f.W - 4, f.W - 3):
+                        f.put(px, py, rgba(self.p["trim"]))
+            return
+        super().paint_extra(f, paint)
 
 
 class Void(Design):
+    """Starfield armor: nebula plates, a glowing halo, orbiting orbs, spectral wings."""
     visor = "slit"
 
-    def material(self, face, fx, fy):
-        t = (fy - face.r0) / max(1, face.r1 - face.r0 - 1)
-        c = mix(self.p["light"], (40, 18, 74), t * 0.9)
-        return shade(c, 1.0 + self.rng.uniform(-0.06, 0.06))
+    def material(self, f, px, py):
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        c = mix(self.p["mid"], (60, 22, 110), max(0.0, self.n1(gx * 0.6 + 50, gy * 0.6) - 0.35) * 1.6)
+        c = mix(c, (20, 40, 110), max(0.0, self.n1(gx * 0.5, gy * 0.5 + 99) - 0.6) * 1.5)
+        return shade(c, 0.95 + self.n2(gx, gy) * 0.1)
 
-    def stars(self, face):
-        self.has_glow = True
-        for _ in range(max(1, face.w * (face.r1 - face.r0) // 10)):
-            fx, fy = self.rng.randrange(face.w), self.rng.randrange(face.r0, face.r1)
-            c = self.rng.choice([(255, 255, 255), (220, 196, 255), (170, 130, 255)])
-            face.lit(fx, fy, c, self.rng.choice([0.6, 0.85, 1.0]))
+    def trim_material(self, f, px, py):
+        return shade(self.p["trim"], 0.9 + (self.n2(px, py) - 0.5) * 0.2)
+
+    def stars(self, f, n):
+        for _ in range(n):
+            x, y = self.rng.uniform(0.2, f.lw - 0.2), self.rng.uniform(f.r0 + 0.2, f.r1 - 0.2)
+            c = self.rng.choice([(255, 255, 255), (220, 196, 255), (170, 140, 255), (150, 200, 255)])
+            if self.rng.random() < 0.2:
+                f.line([(x - 0.4, y), (x + 0.4, y)], c, 1, glow=0.9)
+                f.line([(x, y - 0.4), (x, y + 0.4)], c, 1, glow=0.9)
+            else:
+                f.lit(int(f.X(x)), int(f.Y(y)), c, self.rng.choice([0.6, 0.85, 1.0]))
 
     def helmet_details(self, faces):
         for name in ("top", "right", "left", "back"):
-            self.stars(faces[name])
+            self.stars(faces[name], 12)
 
     def chest_details(self, body, arm):
         for face in list(body.values()) + list(arm.values()):
             if face.name != "bottom":
-                self.stars(face)
-        for name in ("right", "front", "left", "back"):
-            face = body[name]
-            for fy in range(face.r0, face.r1):
-                face.lit(0, fy, shade(self.p["glow"], 0.7), 0.45)
+                self.stars(face, int(face.lw * face.lh * 0.8))
 
     def boot_details(self, leg):
         for face in leg.values():
             if face.name in SIDES:
-                self.stars(face)
+                self.stars(face, 6)
 
     def legging_details(self, body, leg):
         for face in list(body.values()) + list(leg.values()):
             if face.name in SIDES:
-                self.stars(face)
+                self.stars(face, 8)
 
     def extras(self):
-        halo = {"bone": "head", "pivot": [0, -12.5, 0], "rot": [22, 0, 0], "paint": "glow", "bob": 0.6}
-        return [
-            dict(halo, name="halo_front", box=[-5, 0, -5, 10, 1, 1]),
-            dict(halo, name="halo_back", box=[-5, 0, 4, 10, 1, 1]),
-            dict(halo, name="halo_right", box=[-5, 0, -4, 1, 1, 8]),
-            dict(halo, name="halo_left", box=[4, 0, -4, 1, 1, 8]),
-            {"name": "orb", "bone": "body", "box": [-1, -1, -1, 2, 2, 2], "pivot": [-8, -3, 0], "rot": [45, 45, 0], "paint": "glow", "bob": 1.2, "spin": 90, "mirror": True},
-        ]
+        pieces = ring("head", [0, -12.8, 0], 4.6, 10, 0.8, "glow", "halo", tilt=20, bob=0.6)
+        for i in range(2):
+            pieces.append(plate_piece("body", [0, -1.5, 0], [-0.9, -0.9, -0.9, 1.8, 1.8, 1.8], [45, 45, 0], "glow", "orb%d" % i, orbit=[8.5, 1.4], phase=i * math.pi))
+            pieces.append(plate_piece("body", [0, -1.5, 0], [-0.5, -0.5, -0.5, 1.0, 1.0, 1.0], [45, 45, 0], "glow", "orb_small%d" % i, orbit=[8.5, 1.4], phase=i * math.pi + 0.5))
+        for i in range(5):
+            a = math.radians(-20 - i * 18)
+            pieces.append(segment("body", [-1.6, 2.4, 3.0], [-math.cos(a), math.sin(a), 0.35], 6.5 - i * 0.7, 1.4, 0.3, "wing", "wing%d" % i, glow=True, mirror=True,
+                                  sway=3.0, phase=i * 0.3))
+        return pieces
+
+    def paint_extra(self, f, paint):
+        if paint == "wing":
+            f.fill(lambda ff, px, py: mix((210, 180, 255), (120, 60, 220), px / max(1, ff.W - 1)))
+            return
+        super().paint_extra(f, paint)
 
 
 class Sakura(Design):
-    texture_noise = 0.03
+    """Samurai armor: lacquered lamellar plates laced in red, a kabuto with a crescent crest, sode shoulders, a banner."""
+    visor = "kabuto"
 
-    def lacing(self, face, rows):
-        lace = (150, 30, 52)
-        for fy in rows:
-            for fx in range(face.w):
-                face.px(fx, fy, lace if fx % 2 == 0 else shade(lace, 1.3))
+    def material(self, f, px, py):
+        gx, gy = px + f.x0 * 4, py + f.y0 * 4
+        return shade(super().material(f, px, py), 1.0 + 0.08 * math.sin((gx + gy) * 0.25))
 
-    def blossoms(self, face, n):
-        for _ in range(n):
-            fx, fy = self.rng.randrange(1, max(2, face.w - 1)), self.rng.randrange(face.r0 + 1, max(face.r0 + 2, face.r1 - 1))
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                face.px(fx + dx, fy + dy, (255, 240, 246))
-            face.px(fx, fy, (255, 200, 90))
+    def lames(self, f, y0, y1, rows):
+        """Rows of lacquered scales with lacing between them."""
+        h = (y1 - y0) / rows
+        lace = self.p["lace"]
+        for r in range(rows):
+            top = y0 + r * h
+            f.plate(f.mask(rect=(0, top, f.lw, top + h - 0.25)), tint=1.0 - 0.02 * r, light=1.25, dark=0.75)
+            for i in range(int(f.lw * 2)):
+                x = (i + 0.5) / 2
+                f.line([(x - 0.15, top + h - 0.25), (x + 0.15, top + h + 0.1)], lace, 1)
+
+    def chestplate(self, body, arm):
+        for name, f in body.items():
+            f.fill(self.material)
+            if name in ("top", "bottom"):
+                f.plate(f.mask(rect=(0, 0, 8, 4)), tint=0.95 if name == "top" else 0.5, gap=None)
+                continue
+            f.plate(f.mask(rect=(0, 0, f.lw, 1.2)), material=self.trim_material)
+            self.lames(f, 1.2, 11.0, 6)
+            f.plate(f.mask(rect=(0, 11.0, f.lw, 12)), color=self.p["lace"], light=1.3)
+        for name, f in arm.items():
+            f.fill(self.material)
+            if name in ("top", "bottom"):
+                f.plate(f.mask(rect=(0, 0, 4, 4)), tint=1.0 if name == "top" else 0.5, gap=None)
+                continue
+            f.plate(f.mask(rect=(0, 0, 4, 0.9)), material=self.trim_material)
+            self.lames(f, 0.9, 5.0, 3)
+            f.plate(f.mask(rect=(0, 5.0, 4, 7.4)), material=self.under_material, light=1, dark=1)
+            self.lames(f, 7.4, 11.2, 3)
+            f.plate(f.mask(rect=(0, 11.2, 4, 12)), material=self.trim_material)
+        self.chest_details(body, arm)
 
     def chest_details(self, body, arm):
-        for name, face in body.items():
-            if name in SIDES:
-                self.lacing(face, (4, 7, 10))
-        for face in arm.values():
-            if face.name in SIDES:
-                self.lacing(face, (8, 10))
-        self.blossoms(body["front"], 2)
-        self.blossoms(body["back"], 2)
         f = body["front"]
-        for i in range(8):
-            f.px(1 + i * 5 // 8, 10 - i, (92, 56, 48))
+        f.line([(0.6, 10.4), (2.0, 8.4), (3.6, 7.6), (5.2, 5.6), (6.8, 4.8)], (92, 54, 46), 2)
+        for x, y in ((2.0, 8.2), (3.8, 7.3), (5.2, 5.4), (6.6, 4.6), (4.6, 6.6)):
+            for dx, dy in ((0, -0.35), (0.35, 0), (0, 0.35), (-0.35, 0)):
+                f.oval((x + dx - 0.25, y + dy - 0.25, x + dx + 0.25, y + dy + 0.25), (255, 238, 246))
+            f.oval((x - 0.15, y - 0.15, x + 0.15, y + 0.15), (255, 200, 90))
 
     def helmet_details(self, faces):
-        self.lacing(faces["back"], (3, 5))
-        self.blossoms(faces["right"], 1)
-        self.blossoms(faces["left"], 1)
+        for name in ("right", "left", "back"):
+            f = faces[name]
+            f.fill(self.material)
+            f.plate(f.mask(rect=(0, 0, 8, 1.3)), material=self.trim_material)
+            self.lames(f, 1.3, 8.0, 4)
 
-    def legging_details(self, body, leg):
-        for face in leg.values():
-            if face.name in SIDES:
-                self.lacing(face, (2, 4))
+    def leggings(self, body, leg):
+        for name, f in body.items():
+            if name in ("top", "bottom"):
+                continue
+            f.fill(self.material)
+            f.plate(f.mask(rect=(0, 0, f.lw, 1.4)), color=self.p["belt"], light=1.3)
+            self.lames(f, 1.4, 6.0, 3)
+        for name, f in leg.items():
+            if name in ("top", "bottom"):
+                continue
+            f.fill(self.material)
+            self.lames(f, 0, 9.0, 5)
 
     def extras(self):
-        return [
-            {"name": "crest", "bone": "head", "box": [-0.5, -5, -0.5, 1, 5, 1], "pivot": [-0.7, -7.5, -5], "rot": [0, 0, 28], "paint": "accent", "mirror": True},
-            {"name": "crest_disc", "bone": "head", "box": [-1, -1, -0.5, 2, 2, 1], "pivot": [0, -7.5, -5.2], "rot": [0, 0, 45], "paint": "accent"},
-            {"name": "sode", "bone": "right_arm", "box": [-1, -1, -3.5, 1, 6, 7], "pivot": [-4, -2, 0], "rot": [0, 0, 12], "paint": "main", "mirror": True},
-            {"name": "blossom", "bone": "head", "box": [-1, -1, -1, 2, 2, 2], "pivot": [-5, -6, 2], "rot": [0, 45, 0], "paint": "blossom"},
-        ]
+        pieces = chain("head", [-0.6, -7.6, -5.0], [[-0.4, -1, -0.15], [-0.75, -0.7, -0.1], [-1, -0.25, 0]], [1.8, 1.6, 1.4], [0.9, 0.8, 0.6], "trim", "crest", mirror=True)
+        pieces.append(plate_piece("head", [0, -7.6, -5.25], [-0.9, -0.9, -0.3, 1.8, 1.8, 0.6], [0, 0, 45], "trim", "crest_disc"))
+        pieces.append(plate_piece("head", [-4.9, -6.2, -4.4], [-0.3, 0, 0, 0.6, 3.2, 3.0], [0, -35, 0], "main", "flap", mirror=True))
+        pieces.append(plate_piece("head", [0, -2.4, 0], [-5.6, 0, -5.6, 11.2, 1.0, 11.2], [0, 0, 0], "lacquer", "neck_guard"))
+        for i in range(3):
+            pieces.append(plate_piece("right_arm", [-4.2, -2.6, 0], [-0.5 - i * 0.05, i * 1.9, -3.6, 0.7, 2.1, 7.2], [0, 0, 10 + i * 2], "lacquer", "sode%d" % i, mirror=True))
+        for i, (x, z, ry) in enumerate(((-2.4, -3.0, 0), (2.4, -3.0, 0), (-4.4, 0, 90), (4.4, 0, 90), (0, 3.0, 0))):
+            rx = -8 if z < 0 else (8 if z > 0 else 0)
+            rz = (8 if x > 0 else -8) if ry else 0
+            pieces.append(plate_piece("body", [x, 10.8, z], [-2.2, 0, -0.3, 4.4, 3.6, 0.6], [rx, ry, rz], "lacquer", "kusazuri%d" % i, slot="legs"))
+        pieces.append(segment("body", [3.0, 6.0, 3.0], [0, -1, 0.05], 16.0, 0.5, 0.5, "dark", "banner_pole"))
+        pieces.append(plate_piece("body", [3.0, -6.0, 3.3], [0.25, -3.6, -0.1, 4.2, 6.4, 0.2], [0, 0, 0], "banner", "banner", sway=2.5))
+        return pieces
 
-    def paint_extra(self, face, paint, name):
-        if paint == "blossom":
-            for fy in range(face.h):
-                for fx in range(face.w):
-                    face.px(fx, fy, (255, 236, 244) if (fx + fy) % 2 else (255, 196, 220))
+    def paint_extra(self, f, paint):
+        if paint == "lacquer":
+            f.fill(self.material)
+            for py in range(f.H):
+                if py % 8 in (6, 7):
+                    for px in range(f.W):
+                        f.put(px, py, rgba(self.p["lace"]) if (px // 2) % 2 == 0 else shade(rgba(self.p["lace"]), 1.3))
             return
-        super().paint_extra(face, paint, name)
-        if paint == "main" and face.h >= 6:
-            for fy in (1, 3, 5):
-                for fx in range(face.w):
-                    face.px(fx, fy, (150, 30, 52) if fx % 2 == 0 else (196, 50, 76))
+        if paint == "banner":
+            f.fill(lambda ff, px, py: rgba((248, 240, 236)))
+            if f.W > 10 and f.H > 10:
+                cx, cy, r = f.W / 2, f.H / 2, min(f.W, f.H) * 0.28
+                for py in range(f.H):
+                    for px in range(f.W):
+                        d = math.hypot(px - cx, py - cy)
+                        if d < r:
+                            f.put(px, py, rgba((226, 120, 160)))
+                        elif d < r + 1.2:
+                            f.put(px, py, rgba((170, 40, 80)))
+            return
+        super().paint_extra(f, paint)
 
 
 class Circuit(Design):
-    visor = "slit"
+    """Sleek tech armor: gunmetal panels, glowing traces and screens, antenna, back power core, jet boots."""
+    visor = "screen"
 
-    def traces(self, face, n):
-        self.has_glow = True
+    def material(self, f, px, py):
+        gy = py + f.y0 * 4
+        return shade(super().material(f, px, py), 0.96 + 0.08 * (gy % 3 == 0))
+
+    def panel(self, f, x0, y0, x1, y1):
+        f.plate(f.mask(rect=(x0, y0, x1, y1)), tint=1.04, light=1.35, dark=0.55)
+        f.rivet(x0 + 0.35, y0 + 0.35, self.p["trim_light"], 0.18)
+        f.rivet(x1 - 0.35, y1 - 0.35, self.p["trim_light"], 0.18)
+
+    def traces(self, f, n):
+        g = self.p["glow"]
         for _ in range(n):
-            fx, fy = self.rng.randrange(1, max(2, face.w - 1)), self.rng.randrange(face.r0 + 1, max(face.r0 + 2, face.r1 - 1))
-            horizontal = self.rng.random() < 0.5
-            for _ in range(self.rng.randint(2, 6)):
-                if not face.inside(fx, fy):
-                    break
-                face.lit(fx, fy, self.p["glow"], 0.9)
-                fx, fy = (fx + 1, fy) if horizontal else (fx, fy + 1)
-                if self.rng.random() < 0.25:
-                    horizontal = not horizontal
-            face.lit(fx, fy, (210, 252, 255), 1.0)
+            x, y = round(self.rng.uniform(0.5, f.lw - 0.5) * 2) / 2, round(self.rng.uniform(f.r0 + 0.5, f.r1 - 0.5) * 2) / 2
+            pts = [(x, y)]
+            for _ in range(self.rng.randint(2, 4)):
+                if self.rng.random() < 0.5:
+                    x = min(f.lw - 0.3, max(0.3, x + self.rng.choice((-1, 1)) * self.rng.uniform(0.8, 2.2)))
+                else:
+                    y = min(f.r1 - 0.3, max(f.r0 + 0.3, y + self.rng.uniform(0.8, 2.0)))
+                pts.append((x, y))
+            f.line(pts, g, 1, glow=0.85)
+            ex, ey = pts[-1]
+            f.oval((ex - 0.28, ey - 0.28, ex + 0.28, ey + 0.28), (210, 252, 255), glow=1.0)
 
     def helmet_details(self, faces):
         for name in ("right", "left", "back", "top"):
             self.traces(faces[name], 2)
 
     def chest_details(self, body, arm):
-        for face in list(body.values()) + list(arm.values()):
-            if face.name != "bottom":
-                self.traces(face, max(1, face.w * face.h // 24))
         f = body["front"]
-        for fx, fy in ((3, 3), (4, 3), (3, 4), (4, 4)):
-            f.lit(fx, fy, (210, 252, 255))
+        self.panel(f, 1.0, 1.6, 7.0, 5.6)
+        f.plate(f.mask(ellipse=(2.8, 2.2, 5.2, 4.8)), color=(16, 40, 50), light=1.6, dark=0.5)
+        f.oval((3.3, 2.7, 4.7, 4.3), self.p["glow"], glow=1.0)
+        f.oval((3.7, 3.1, 4.3, 3.9), (220, 255, 255), glow=1.0)
+        for face in list(body.values()) + list(arm.values()):
+            if face.name in SIDES and face is not f:
+                self.traces(face, max(1, int(face.lw * face.lh / 18)))
+        self.traces(f, 2)
 
     def boot_details(self, leg):
         for face in leg.values():
             if face.name in SIDES:
-                face.lit(1, face.r0 + 2, self.p["glow"], 0.9)
-                face.lit(2, face.r0 + 2, self.p["glow"], 0.9)
+                face.line([(0.4, 7.6), (3.6, 7.6)], self.p["glow"], 1, glow=0.9)
 
     def legging_details(self, body, leg):
         for face in leg.values():
@@ -801,36 +1131,98 @@ class Circuit(Design):
                 self.traces(face, 1)
 
     def extras(self):
-        return [
-            {"name": "antenna", "bone": "head", "box": [-0.5, -6, -0.5, 1, 6, 1], "pivot": [-4.5, -7, 1.5], "rot": [-6, 0, -8], "paint": "dark"},
-            {"name": "antenna_tip", "bone": "head", "box": [-1, -1, -1, 2, 2, 2], "pivot": [-5.4, -13.2, 0.9], "rot": [0, 0, 0], "paint": "glow", "bob": 0.3},
-            {"name": "ear_module", "bone": "head", "box": [-1, -2, -1.5, 1, 3, 3], "pivot": [-5, -3.5, 0], "rot": [0, 0, 0], "paint": "main", "mirror": True},
-            {"name": "core", "bone": "body", "box": [-2.5, 0, 0, 5, 6, 2], "pivot": [0, 2, 3], "rot": [0, 0, 0], "paint": "main"},
-            {"name": "core_cells", "bone": "body", "box": [-1.5, 0, 0, 3, 4, 1], "pivot": [0, 3, 4.6], "rot": [0, 0, 0], "paint": "glow"},
-            {"name": "shoulder_plate", "bone": "right_arm", "box": [-1, -1, -2.5, 1, 4, 5], "pivot": [-4, -2.5, 0], "rot": [0, 0, 8], "paint": "main", "mirror": True},
-            {"name": "shoulder_strip", "bone": "right_arm", "box": [-0.5, 0, -1.5, 1, 3, 3], "pivot": [-4.6, -2, 0], "rot": [0, 0, 8], "paint": "glow", "mirror": True},
-        ]
+        pieces = chain("head", [-4.6, -7.4, 1.4], [[-0.1, -1, 0.05], [-0.05, -1, 0.1]], [3.0, 2.6], [0.8, 0.5], "dark", "antenna")
+        pieces.append(plate_piece("head", [-4.9, -13.2, 1.8], [-0.7, -0.7, -0.7, 1.4, 1.4, 1.4], [0, 0, 0], "glow", "antenna_tip", bob=0.3))
+        pieces.append(plate_piece("head", [-5.0, -4.6, 0], [-1.0, -1.6, -1.8, 1.0, 3.2, 3.6], [0, 0, 0], "main", "ear", mirror=True))
+        pieces.append(plate_piece("head", [-6.05, -4.6, 0], [0, -0.9, -1.0, 0.3, 1.8, 2.0], [0, 0, 0], "glow", "ear_light", mirror=True))
+        pieces.append(plate_piece("head", [0, -5.6, -5.0], [-4.6, -1.0, -0.6, 9.2, 2.6, 0.8], [8, 0, 0], "screen", "visor"))
+        pieces.append(plate_piece("body", [0, 1.4, 3.0], [-2.8, 0, 0, 5.6, 7.0, 2.4], [0, 0, 0], "main", "core"))
+        for i in range(3):
+            pieces.append(plate_piece("body", [0, 2.2 + i * 2.0, 5.3], [-1.8, 0, 0, 3.6, 1.4, 0.4], [0, 0, 0], "glow", "cell%d" % i))
+        pieces.append(segment("body", [-2.4, 1.6, 4.0], [-0.6, -1, -0.2], 2.6, 0.6, 0.6, "dark", "cable", mirror=True))
+        pieces += pauldron("right_arm", "shoulder", "main", "dark", levels=2, width=6.0, depth=6.4)
+        pieces.append(plate_piece("right_arm", [0, 0, 0], [-4.7, -2.6, -2.2, 0.4, 1.4, 4.4], [0, 0, -14], "glow", "strip", mirror=True))
+        pieces.append(plate_piece("right_arm", [-3.3, 8.0, 0], [-0.4, -1.5, -1.8, 0.6, 3.0, 3.6], [0, 0, 0], "main", "bracer", mirror=True))
+        pieces.append(plate_piece("right_arm", [-3.75, 8.0, 0], [-0.2, -1.0, -1.3, 0.25, 2.0, 2.6], [0, 0, 0], "glow", "screen", mirror=True))
+        pieces.append(plate_piece("right_leg", [0, 10.6, 2.6], [-1.4, -1.6, 0, 2.8, 2.8, 1.2], [0, 0, 0], "main", "jet", slot="feet", mirror=True))
+        pieces.append(plate_piece("right_leg", [0, 11.6, 3.9], [-0.9, -0.9, 0, 1.8, 1.8, 0.3], [0, 0, 0], "glow", "jet_flame", slot="feet", mirror=True))
+        return pieces
+
+    def paint_extra(self, f, paint):
+        if paint == "screen":
+            f.fill(lambda ff, px, py: rgba((10, 30, 40)))
+            for py in range(1, f.H, 3):
+                for px in range(f.W):
+                    f.lit(px, py, self.p["glow"], 0.55)
+            return
+        super().paint_extra(f, paint)
 
 
-def pal(light, mid, dark, rim, accent, accent_light, glow, visor=None, belt=None):
-    return {"light": light, "mid": mid, "dark": dark, "rim": rim, "accent": accent, "accent_light": accent_light,
-            "glow": glow, "visor": visor or dark, "belt": belt or rim}
+def pal(light, mid, dark, trim, trim_light, glow, visor=None, belt=None, **extra):
+    p = {"light": light, "mid": mid, "dark": dark, "trim": trim, "trim_light": trim_light, "glow": glow, "visor": visor or dark, "belt": belt or trim}
+    p.update(extra)
+    return p
 
 
 DESIGNS = [
-    Frost("frostforged", "Frostforged", pal((176, 226, 250), (104, 178, 224), (34, 78, 134), (52, 104, 162), (220, 244, 255), (255, 255, 255), (150, 230, 255)), 0x7AC8EB, 11),
-    Obsidian("obsidian_knight", "Obsidian Knight", pal((52, 38, 66), (28, 20, 38), (8, 5, 14), (16, 10, 24), (112, 64, 176), (190, 150, 255), (190, 110, 255), visor=(6, 3, 10)), 0x3A2A52, 12, glow_pulse=True),
-    Ember("ember", "Ember", pal((72, 60, 56), (44, 36, 34), (18, 12, 10), (26, 18, 16), (200, 84, 24), (255, 186, 90), (255, 140, 40)), 0xC0501A, 13, glow_pulse=True),
-    Verdant("verdant", "Verdant", pal((96, 156, 76), (60, 118, 54), (44, 70, 30), (92, 62, 34), (96, 170, 64), (190, 230, 120), (170, 255, 140), belt=(110, 74, 40)), 0x3E7A3A, 14),
-    Royal("royal_guard", "Royal Guard", pal((248, 248, 244), (206, 208, 212), (120, 124, 134), (176, 136, 44), (228, 182, 60), (255, 232, 150), (255, 230, 150), belt=(130, 30, 40)), 0xE8E6DE, 15),
-    Void("void_walker", "Void Walker", pal((24, 18, 44), (14, 10, 26), (4, 2, 10), (70, 36, 128), (124, 70, 220), (210, 180, 255), (176, 110, 255), visor=(2, 0, 6)), 0x2A1446, 16, glow_pulse=True),
-    Sakura("sakura", "Sakura", pal((252, 206, 224), (236, 160, 192), (150, 70, 104), (190, 92, 130), (226, 182, 60), (255, 236, 160), (255, 220, 236), belt=(150, 30, 52)), 0xF2A7C3, 17),
-    Circuit("circuit", "Circuit", pal((78, 86, 96), (46, 52, 60), (20, 24, 30), (30, 34, 42), (90, 100, 112), (150, 160, 170), (64, 228, 255), visor=(8, 18, 24)), 0x2C8FA8, 18),
+    Frost("frostforged", "Frostforged", pal((190, 232, 252), (110, 182, 226), (34, 78, 134), (70, 130, 190), (230, 248, 255), (160, 236, 255)), 0x7AC8EB, 11),
+    Obsidian("obsidian_knight", "Obsidian Knight", pal((58, 42, 74), (30, 22, 42), (10, 6, 16), (56, 36, 84), (196, 160, 255), (196, 120, 255), visor=(4, 2, 8)), 0x3A2A52, 12, glow_pulse=True),
+    Ember("ember", "Ember", pal((76, 62, 58), (46, 38, 36), (18, 12, 10), (120, 52, 24), (255, 186, 90), (255, 140, 40), visor=(10, 4, 2)), 0xC0501A, 13, glow_pulse=True),
+    Verdant("verdant", "Verdant", pal((112, 172, 84), (66, 124, 58), (42, 66, 28), (96, 64, 36), (190, 230, 120), (190, 255, 150), belt=(110, 74, 40), bark=(104, 72, 42)), 0x3E7A3A, 14),
+    Royal("royal_guard", "Royal Guard", pal((250, 250, 248), (204, 208, 214), (110, 114, 126), (214, 168, 52), (255, 234, 150), (255, 230, 150), belt=(130, 30, 40)), 0xE8E6DE, 15),
+    Void("void_walker", "Void Walker", pal((28, 20, 52), (14, 10, 28), (4, 2, 10), (90, 50, 170), (210, 180, 255), (186, 120, 255), visor=(2, 0, 6)), 0x2A1446, 16, glow_pulse=True),
+    Sakura("sakura", "Sakura", pal((252, 212, 228), (236, 164, 196), (150, 70, 104), (214, 170, 60), (255, 236, 160), (255, 220, 236), visor=(60, 20, 30), belt=(150, 30, 52), lace=(170, 28, 54)), 0xF2A7C3, 17),
+    Circuit("circuit", "Circuit", pal((86, 94, 106), (48, 54, 62), (20, 24, 30), (70, 78, 90), (150, 160, 170), (64, 228, 255), visor=(8, 22, 30)), 0x2C8FA8, 18),
 ]
 
 
+# ---------------------------------------------------------------------------------------------- packing and output
+
+def box_faces(u, v, w, h, d):
+    return {"top": (u + d, v, w, d), "bottom": (u + d + w, v, w, d), "right": (u, v + d, d, h), "front": (u + d, v + d, w, h),
+            "left": (u + d + w, v + d, d, h), "back": (u + 2 * d + w, v + d, w, h)}
+
+
+def pack_extras(design):
+    """Places every 3D piece's box on the texture, paints it, and returns the JSON parts and the image."""
+    img = Image.new("RGBA", (EXTRAS_SIZE * S, EXTRAS_SIZE * S), CLEAR)
+    parts = []
+    x = y = row_h = 0
+    for piece in design.extras():
+        w, h, d = (max(0.25, v) for v in piece["box"][3:6])
+        need_w, need_h = int(math.ceil(2 * (w + d))) + 1, int(math.ceil(h + d)) + 1
+        if x + need_w > EXTRAS_SIZE:
+            x, y, row_h = 0, y + row_h, 0
+        if y + need_h > EXTRAS_SIZE:
+            raise SystemExit(design.id + ": 3D pieces don't fit on the texture")
+        for face_name, (fx, fy, fw, fh) in box_faces(x, y, w, h, d).items():
+            f = Face(design, (fx, fy, fw, fh), "extra", face_name)
+            design.paint_extra(f, piece.get("paint", "main"))
+            img.alpha_composite(f.img, (int(round(fx * S)), int(round(fy * S))))
+        glow = piece.get("glow", piece.get("paint") == "glow")
+        part = {"name": piece["name"], "bone": piece["bone"], "tex": [x, y], "box": [round(v, 3) for v in piece["box"]],
+                "pivot": [round(v, 3) for v in piece.get("pivot", [0, 0, 0])], "rot": [round(v, 3) for v in piece.get("rot", [0, 0, 0])], "glow": bool(glow),
+                "spin": piece.get("spin", 0), "bob": piece.get("bob", 0), "phase": round(piece.get("phase", 0), 3), "sway": piece.get("sway", 0),
+                "orbit": piece.get("orbit", [0, 0])}
+        if "slot" in piece:
+            part["slot"] = piece["slot"]
+        parts.append(part)
+        if piece.get("mirror"):
+            mx, my, mz, mw, mh, md = part["box"]
+            px, py, pz = part["pivot"]
+            rx, ry, rz = part["rot"]
+            mirror_bone = {"right_arm": "left_arm", "right_leg": "left_leg"}.get(piece["bone"], piece["bone"])
+            if mirror_bone == piece["bone"]:
+                px = -px
+            parts.append(dict(part, name=part["name"] + "_m", bone=mirror_bone, box=[round(-(mx + mw), 3), my, mz, mw, mh, md], pivot=[round(px, 3), py, pz],
+                              rot=[rx, round(-ry, 3), round(-rz, 3)], mirror=True, phase=round(part["phase"] + 1.7, 3)))
+        x += need_w
+        row_h = max(row_h, need_h)
+    return parts, img
+
+
 def template():
-    """Every face in its own color, so you can see which pixels go where."""
+    """Every face in its own color, so you can see which pixels go where (64x32, like vanilla)."""
     img = Image.new("RGBA", (64, 32), CLEAR)
     legs = Image.new("RGBA", (64, 32), CLEAR)
     colors = {"top": (250, 220, 70), "bottom": (160, 130, 40), "right": (230, 120, 60), "front": (220, 60, 60), "left": (70, 160, 230), "back": (120, 80, 200)}
@@ -839,9 +1231,9 @@ def template():
             for y in range(y0, y0 + h):
                 for x in range(x0, x0 + w):
                     edge = x in (x0, x0 + w - 1) or y in (y0, y0 + h - 1)
-                    c = shade(colors[face], part_shade * (0.6 if edge else 1.0))
+                    c = shade(rgba(colors[face]), part_shade * (0.6 if edge else 1.0))
                     if faces is LEG:
-                        if face in ("top",):
+                        if face == "top":
                             continue
                         if face == "bottom" or y >= 26:
                             img.putpixel((x, y), c)
@@ -880,7 +1272,7 @@ def main():
         parts, extras_img = pack_extras(design)
         extras_img.save(os.path.join(tex, "extras", design.id + ".png"))
         with open(os.path.join(ROOT, "armor_extras", design.id + ".json"), "w") as f:
-            json.dump({"texture_size": [64, 64], "parts": parts}, f, indent=1)
+            json.dump({"texture_size": [EXTRAS_SIZE, EXTRAS_SIZE], "parts": parts}, f, indent=1)
             f.write("\n")
         with open(os.path.join(ROOT, "equipment", design.id + ".json"), "w") as f:
             json.dump({"layers": {"humanoid": [{"texture": "vanity:" + design.id}], "humanoid_leggings": [{"texture": "vanity:" + design.id}]}}, f, indent=2)
@@ -892,7 +1284,7 @@ def main():
     main_t, legs_t = template()
     main_t.save(os.path.join(examples, "template.png"))
     legs_t.save(os.path.join(examples, "template_leggings.png"))
-    frost_a, frost_b, frost_ga, frost_gb = DESIGNS[0].paint()
+    frost_a, frost_b, frost_ga, _ = DESIGNS[0].paint()
     frost_a.save(os.path.join(examples, "example.png"))
     frost_b.save(os.path.join(examples, "example_leggings.png"))
     frost_ga.save(os.path.join(examples, "example_glow.png"))
