@@ -43,7 +43,7 @@ import dev.susyst.vanity.render.CombatParticles;
 import dev.susyst.vanity.render.CustomArmors;
 import net.minecraft.client.resources.model.EquipmentAssetManager;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import dev.susyst.vanity.AutoOutfits;
 import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.GlowAnimation;
@@ -1076,7 +1076,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			context.runOnClient(client -> {
 				Entity pig = null;
 				for (Entity entity : client.level.entitiesForRendering()) {
-					if (entity.getType() == EntityType.PIG && entity.isAlive()) pig = entity;
+					if (entity.getType() == EntityTypes.PIG && entity.isAlive()) pig = entity;
 				}
 				check(pig != null, "A pig should be there to hit");
 				client.gameMode.attack(client.player, pig);
