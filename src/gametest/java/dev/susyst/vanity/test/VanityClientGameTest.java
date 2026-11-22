@@ -1095,8 +1095,8 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			context.runOnClient(client -> {
 				VanityClient.config().swing.style = style;
 				SwingTrails.lastParticles = 0;
-				client.player.swing(InteractionHand.MAIN_HAND);
 			});
+			attackClick(context);
 			context.waitTicks(3);
 			context.runOnClient(client -> check(SwingTrails.lastParticles > 0, style.label + " swing trail should draw"));
 			context.takeScreenshot("37_swing_trail_" + style.name().toLowerCase(java.util.Locale.ROOT));
@@ -1105,10 +1105,8 @@ public class VanityClientGameTest implements FabricClientGameTest {
 
 		// Third person, from behind
 		setCamera(context, CameraType.THIRD_PERSON_BACK);
-		context.runOnClient(client -> {
-			VanityClient.config().swing.style = TrailStyle.COLOR;
-			client.player.swing(InteractionHand.MAIN_HAND);
-		});
+		context.runOnClient(client -> VanityClient.config().swing.style = TrailStyle.COLOR);
+		attackClick(context);
 		context.waitTicks(3);
 		context.takeScreenshot("37e_swing_trail_third_person");
 		context.waitTicks(12);
@@ -1117,7 +1115,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		singleplayer.getServer().runCommand("item replace entity @p weapon.mainhand with minecraft:air");
 		context.waitTicks(3);
 		int before = context.computeOnClient(client -> SwingTrails.trails);
-		context.runOnClient(client -> client.player.swing(InteractionHand.MAIN_HAND));
+		attackClick(context);
 		context.waitTicks(3);
 		context.runOnClient(client -> {
 			check(SwingTrails.trails == before, "With Weapons only, an empty-handed swing shouldn't leave a trail");
@@ -1214,6 +1212,11 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.takeScreenshot("38e_try_it_abilities");
 		context.runOnClient(client -> VanityClient.config().abilities.style = TrailStyle.NONE);
 		context.waitTicks(10);
+	}
+
+	/** A left click in game (an attack swing at whatever you look at, or at nothing). */
+	private static void attackClick(ClientGameTestContext context) {
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
 	}
 
 	/** Hit and kill effects on a real target: hit a pig, it dies, the kill effect plays where it was. */
