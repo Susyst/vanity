@@ -521,6 +521,8 @@ public final class VanityScreen extends Screen {
 		int r3 = r2 + step;
 		int r4 = r3 + step;
 		for (Page p : Page.values()) this.hintY.put(p, r4 + step + 2);
+		// The Look page has no fifth row, so its hint goes there
+		this.hintY.put(Page.LOOK, r4 + 2);
 		this.hintY.put(Page.TRIM, r4 + 2);
 
 		// ---- Look ----
@@ -1031,7 +1033,7 @@ public final class VanityScreen extends Screen {
 		int y0 = this.pickerY0();
 		int x1 = this.pickerX1();
 		int y1 = this.pickerY1();
-		Glass.fill(g, x0, y0, x1 - x0, y1 - y0, 0xF4121720);
+		Glass.fill(g, x0, y0, x1 - x0, y1 - y0, 0xFF121720);
 		Glass.border(g, x0, y0, x1 - x0, y1 - y0, Glass.alpha(Glass.ACCENT, 0x90));
 		g.text(this.font, Component.literal(this.pickerTitle).withStyle(ChatFormatting.BOLD), x0 + 6, y0 + 6, Glass.TEXT, false);
 		boolean overClose = mouseX >= x1 - 16 && mouseX < x1 - 2 && mouseY >= y0 + 2 && mouseY < y0 + 16;
@@ -1376,7 +1378,7 @@ public final class VanityScreen extends Screen {
 		Component text = look.isEmpty()
 				? Component.literal(target + ": pick a look")
 				: Component.literal(target + " looks like ").append(look.getHoverName());
-		graphics.text(this.font, text, this.panelX, y, look.isEmpty() ? GRAY : GREEN);
+		graphics.text(this.font, this.fit(text), this.panelX, y, look.isEmpty() ? GRAY : GREEN);
 		this.hint(graphics, "Works in first and third person, the hotbar and your inventory.");
 	}
 
@@ -1402,7 +1404,7 @@ public final class VanityScreen extends Screen {
 			text = Component.literal("Unknown item id (SkyBlock ids: sb:ID)");
 			color = RED;
 		} else if (s.itemStack == null && VanityConfig.resolveItem(s.item).isEmpty() && VanityConfig.skyblockIdOf(s.item) != null) {
-			text = Component.literal("SkyBlock " + VanityConfig.skyblockIdOf(s.item) + ": your pack's texture for it");
+			text = Component.literal("").append(stack.getHoverName()).append(Component.literal(" · by SkyBlock id"));
 			color = GREEN;
 		} else if (VanityCosmetics.usesVanillaLook(this.selected, stack)) {
 			text = Component.literal("Looks like ").append(stack.getHoverName());
@@ -1412,7 +1414,14 @@ public final class VanityScreen extends Screen {
 			color = GREEN;
 		}
 
-		graphics.text(this.font, text, this.panelX, y, color);
+		graphics.text(this.font, this.fit(text), this.panelX, y, color);
+	}
+
+	/** Text cut with "…" to fit the panel width. */
+	private net.minecraft.util.FormattedCharSequence fit(Component text) {
+		if (this.font.width(text) <= this.panelW) return text.getVisualOrderText();
+		return net.minecraft.locale.Language.getInstance().getVisualOrder(net.minecraft.network.chat.FormattedText.composite(
+				this.font.substrByWidth(text, this.panelW - this.font.width("…")), net.minecraft.network.chat.FormattedText.of("…")));
 	}
 
 	/** Same as the inventory's player preview (follows the mouse), plus a turntable angle. */
