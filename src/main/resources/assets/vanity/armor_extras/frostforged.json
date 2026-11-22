@@ -1,0 +1,221 @@
+{
+ "texture_size": [
+  64,
+  64
+ ],
+ "parts": [
+  {
+   "name": "crown_mid",
+   "bone": "head",
+   "tex": [
+    0,
+    0
+   ],
+   "box": [
+    -1,
+    -5,
+    -1,
+    2,
+    5,
+    2
+   ],
+   "pivot": [
+    0,
+    -9,
+    -1
+   ],
+   "rot": [
+    -8,
+    45,
+    0
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0
+  },
+  {
+   "name": "crown_side",
+   "bone": "head",
+   "tex": [
+    8,
+    0
+   ],
+   "box": [
+    -1,
+    -3,
+    -1,
+    2,
+    3,
+    2
+   ],
+   "pivot": [
+    -3,
+    -9,
+    -1
+   ],
+   "rot": [
+    0,
+    45,
+    18
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0
+  },
+  {
+   "name": "crown_side_m",
+   "bone": "head",
+   "tex": [
+    8,
+    0
+   ],
+   "box": [
+    -1,
+    -3,
+    -1,
+    2,
+    3,
+    2
+   ],
+   "pivot": [
+    3,
+    -9,
+    -1
+   ],
+   "rot": [
+    0,
+    -45,
+    -18
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "mirror": true
+  },
+  {
+   "name": "shoulder_big",
+   "bone": "right_arm",
+   "tex": [
+    16,
+    0
+   ],
+   "box": [
+    -1,
+    -5,
+    -1,
+    2,
+    5,
+    2
+   ],
+   "pivot": [
+    -2,
+    -3,
+    0
+   ],
+   "rot": [
+    8,
+    45,
+    22
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0
+  },
+  {
+   "name": "shoulder_big_m",
+   "bone": "left_arm",
+   "tex": [
+    16,
+    0
+   ],
+   "box": [
+    -1,
+    -5,
+    -1,
+    2,
+    5,
+    2
+   ],
+   "pivot": [
+    -2,
+    -3,
+    0
+   ],
+   "rot": [
+    8,
+    -45,
+    -22
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "mirror": true
+  },
+  {
+   "name": "shoulder_small",
+   "bone": "right_arm",
+   "tex": [
+    24,
+    0
+   ],
+   "box": [
+    -0.5,
+    -3,
+    -0.5,
+    1,
+    3,
+    1
+   ],
+   "pivot": [
+    -3,
+    -3,
+    2
+   ],
+   "rot": [
+    30,
+    0,
+    30
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0
+  },
+  {
+   "name": "shoulder_small_m",
+   "bone": "left_arm",
+   "tex": [
+    24,
+    0
+   ],
+   "box": [
+    -0.5,
+    -3,
+    -0.5,
+    1,
+    3,
+    1
+   ],
+   "pivot": [
+    -3,
+    -3,
+    2
+   ],
+   "rot": [
+    30,
+    0,
+    -30
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "mirror": true
+  }
+ ]
+}

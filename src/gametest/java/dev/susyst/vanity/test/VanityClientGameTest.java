@@ -174,7 +174,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testAnimatedDesignAndGlow(context, singleplayer);
 			testItemSkins(context, singleplayer);
 			testGrabPickAndSkyblockIds(context, singleplayer);
-			testCustomArmors(context);
+			testCustomArmors(context, singleplayer);
 			testCombatEffects(context, singleplayer);
 			testAutoOutfit(context);
 		}
@@ -991,25 +991,58 @@ public class VanityClientGameTest implements FabricClientGameTest {
 	}
 
 	/** Vanity's own armor designs and armor drawn by you (a PNG in config/vanity/armors), worn through the real armor renderer. */
-	private static void testCustomArmors(ClientGameTestContext context) {
+	private static void testCustomArmors(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		context.runOnClient(client -> {
 			for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).rune.enabled = false;
+			faceForward(client);
+			check(CustomArmors.BUILT_IN.size() == 8, "There should be 8 built-in custom armors, got " + CustomArmors.BUILT_IN.size());
 		});
 
+		for (CameraType camera : new CameraType[] {CameraType.THIRD_PERSON_FRONT, CameraType.THIRD_PERSON_BACK}) {
+			setCamera(context, camera);
+
+			for (CustomArmors.Armor armor : CustomArmors.BUILT_IN) {
+				context.runOnClient(client -> {
+					VanityConfig config = VanityClient.config();
+					for (CosmeticSlot slot : CosmeticSlot.values()) {
+						config.get(slot).setLook(armor.lookId());
+						config.get(slot).resetArmorStyle();
+					}
+					check(VanityClient.equipmentAssets().get(armor.assetKey()) != EquipmentAssetManager.MISSING, armor.name() + " should have armor model layers");
+					check(!armor.extras().isEmpty(), armor.name() + " should have 3D pieces");
+					ItemStack chest = drawnArmor(client, EquipmentSlot.CHEST);
+					check(chest.get(DataComponents.EQUIPPABLE).assetId().orElseThrow().equals(armor.assetKey()), armor.name() + " should be worn with its own textures, got " + chest);
+					VanityRenderData data = liveData(client);
+					check(data.custom[CosmeticSlot.CHEST.ordinal()] == armor && data.extras[CosmeticSlot.CHEST.ordinal()], armor.name() + " should be drawn with its 3D pieces");
+				});
+				context.waitTicks(3);
+				context.takeScreenshot("35_custom_armor_" + armor.id() + (camera == CameraType.THIRD_PERSON_BACK ? "_back" : ""));
+			}
+		}
+
+		// The glowing ones at night
+		setCamera(context, CameraType.THIRD_PERSON_FRONT);
+		singleplayer.getServer().runCommand("time set midnight");
+		context.waitTicks(5);
+
 		for (CustomArmors.Armor armor : CustomArmors.BUILT_IN) {
+			if (!armor.glow()) continue;
 			context.runOnClient(client -> {
-				VanityConfig config = VanityClient.config();
-				for (CosmeticSlot slot : CosmeticSlot.values()) {
-					config.get(slot).setLook(armor.lookId());
-					config.get(slot).resetArmorStyle();
-				}
-				check(VanityClient.equipmentAssets().get(armor.assetKey()) != EquipmentAssetManager.MISSING, armor.name() + " should have armor model layers");
-				ItemStack chest = drawnArmor(client, EquipmentSlot.CHEST);
-				check(chest.get(DataComponents.EQUIPPABLE).assetId().orElseThrow().equals(armor.assetKey()), armor.name() + " should be worn with its own textures, got " + chest);
+				for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).setLook(armor.lookId());
 			});
 			context.waitTicks(3);
-			context.takeScreenshot("35_custom_armor_" + armor.id());
+			context.takeScreenshot("35_custom_armor_" + armor.id() + "_night");
 		}
+
+		singleplayer.getServer().runCommand("time set noon");
+		context.runOnClient(client -> {
+			for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).extras = false;
+		});
+		context.waitTicks(3);
+		context.takeScreenshot("35_custom_armor_circuit_without_3d");
+		context.runOnClient(client -> {
+			for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).extras = true;
+		});
 
 		// Pick one from the look list
 		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.LOOK));
@@ -1037,6 +1070,8 @@ public class VanityClientGameTest implements FabricClientGameTest {
 				check(Files.isRegularFile(folder.resolve("README.txt")), "The armor folder should have a README");
 				Files.copy(folder.resolve("examples/template.png"), folder.resolve("my_armor.png"), StandardCopyOption.REPLACE_EXISTING);
 				Files.copy(folder.resolve("examples/template_leggings.png"), folder.resolve("my_armor_leggings.png"), StandardCopyOption.REPLACE_EXISTING);
+				Files.copy(folder.resolve("examples/example.png"), folder.resolve("glowy.png"), StandardCopyOption.REPLACE_EXISTING);
+				Files.copy(folder.resolve("examples/example_glow.png"), folder.resolve("glowy_glow.png"), StandardCopyOption.REPLACE_EXISTING);
 			} catch (java.io.IOException e) {
 				throw new AssertionError("Couldn't copy the armor template", e);
 			}
@@ -1048,6 +1083,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			CustomArmors.Armor mine = CustomArmors.find("vanity:user/my_armor");
 			check(mine != null && mine.user() && mine.name().equals("My Armor"), "Your armor PNG should load as \"My Armor\", got " + mine);
 			check(VanityClient.equipmentAssets().get(mine.assetKey()) != EquipmentAssetManager.MISSING, "Your armor should have model layers");
+			CustomArmors.Armor glowy = CustomArmors.find("vanity:user/glowy");
+			check(glowy != null && glowy.glow(), "glowy.png with glowy_glow.png should load as a glowing armor, got " + glowy);
+			check(CustomArmors.find("vanity:user/glowy_glow") == null, "The _glow file isn't an armor by itself");
 			for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).setLook(mine.lookId());
 		});
 		context.waitTicks(3);
@@ -1201,6 +1239,20 @@ public class VanityClientGameTest implements FabricClientGameTest {
 				client.gui.hud.toggle();
 			}
 		});
+	}
+
+	/** Turns the player to face the third-person front camera straight on. */
+	private static void faceForward(Minecraft client) {
+		client.player.setYRot(0.0F);
+		client.player.setXRot(0.0F);
+		client.player.yBodyRot = 0.0F;
+		client.player.yHeadRot = 0.0F;
+	}
+
+	/** The player's Vanity render data for this frame. */
+	private static VanityRenderData liveData(Minecraft client) {
+		AvatarRenderState state = (AvatarRenderState) client.getEntityRenderDispatcher().getRenderer(client.player).createRenderState(client.player, 1.0F);
+		return state.getData(VanityClient.RENDER_DATA);
 	}
 
 	/** Shows the HUD (hotbar, action bar) with chat and toasts cleared. */

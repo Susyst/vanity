@@ -48,6 +48,9 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 	private static final int GLINT_ORDER = 12;
 	private static final int DESIGN_ORDER = 14;
 	private static final int DESIGN_GLOW_ORDER = 20;
+	/** Custom armor glow parts (over the armor, under the trim) and 3D pieces. */
+	private static final int CUSTOM_GLOW_ORDER = 9;
+	private static final int EXTRAS_ORDER = 7;
 	/** Trim glow is a soft full-bright layer blended over the normal trim; 100% on the slider is this much. */
 	private static final float MAX_TRIM_GLOW = 0.45F;
 
@@ -188,6 +191,25 @@ public final class VanityLayer extends RenderLayer<AvatarRenderState, PlayerMode
 
 			if (!data.armor[i].isEmpty()) {
 				this.submitArmor(slot, data, poseStack, submitNodeCollector, lightCoords, state);
+			}
+
+			CustomArmors.Armor custom = data.custom[i];
+
+			if (custom != null) {
+				float opacity = data.opacity[i];
+
+				// The design's glowing parts, full-bright over the armor (some breathe slowly)
+				if (custom.glow()) {
+					float pulse = custom.pulse() ? 0.78F + 0.22F * net.minecraft.util.Mth.sin(state.ageInTicks * 0.12F) : 1.0F;
+					EquipmentClientInfo.LayerType layerType = layerType(slot);
+					submitNodeCollector.order(CUSTOM_GLOW_ORDER).submitModel(this.armorModels.get(slot.equipmentSlot), state, poseStack,
+							VanityRenderTypes.armorGlow(custom.glowTexture(layerType)), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+							withAlpha(0xFFFFFF, pulse * opacity), (UvMapping) null, 0);
+				}
+
+				if (data.extras[i] && !custom.extras().isEmpty()) {
+					ArmorExtras.submit(custom, slot, model, poseStack, submitNodeCollector, lightCoords, opacity, state.ageInTicks, state.outlineColor, EXTRAS_ORDER);
+				}
 			}
 
 			if (data.designs[i].length > 0) {

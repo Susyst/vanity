@@ -2,6 +2,8 @@ package dev.susyst.vanity.render;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -11,6 +13,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.blaze3d.platform.NativeImage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,8 +47,11 @@ public final class CustomArmors {
 	private static final Logger LOGGER = LoggerFactory.getLogger("vanity");
 	public static final String PREFIX = "vanity:";
 
-	/** A custom armor: {@code id} is "frostforged" or, for your own, "user/<file name>". */
-	public record Armor(String id, String name, int color, boolean user) {
+	/**
+	 * A custom armor: {@code id} is "frostforged" or, for your own, "user/<file name>". {@code glow}: it has
+	 * <id>_glow.png textures drawn full-bright on top; {@code pulse}: that glow breathes. {@code extras}: its 3D pieces.
+	 */
+	public record Armor(String id, String name, int color, boolean user, boolean glow, boolean pulse, List<ArmorExtras.Piece> extras) {
 		public String lookId() {
 			return PREFIX + this.id;
 		}
@@ -50,17 +59,48 @@ public final class CustomArmors {
 		public ResourceKey<EquipmentAsset> assetKey() {
 			return ResourceKey.create(EquipmentAssets.ROOT_ID, Identifier.fromNamespaceAndPath("vanity", this.id));
 		}
+
+		/** The glow texture for one armor layer (humanoid or humanoid_leggings). */
+		public Identifier glowTexture(EquipmentClientInfo.LayerType layerType) {
+			return Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/" + layerType.getSerializedName() + "/" + this.id + "_glow.png");
+		}
+
+		public Identifier extrasTexture() {
+			return Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/extras/" + this.id + ".png");
+		}
 	}
 
-	public static final List<Armor> BUILT_IN = List.of(
-			new Armor("frostforged", "Frostforged", 0x7AC8EB, false),
-			new Armor("obsidian_knight", "Obsidian Knight", 0x3A2A52, false),
-			new Armor("ember", "Ember", 0xC0501A, false),
-			new Armor("verdant", "Verdant", 0x3E7A3A, false),
-			new Armor("royal_guard", "Royal Guard", 0xE8E6DE, false),
-			new Armor("void_walker", "Void Walker", 0x2A1446, false),
-			new Armor("sakura", "Sakura", 0xF2A7C3, false),
-			new Armor("circuit", "Circuit", 0x2C8FA8, false));
+	/** Vanity's own designs, listed in assets/vanity/custom_armors.json (written by tools/make_armor_textures.py). */
+	public static final List<Armor> BUILT_IN = loadBuiltIn();
+
+	private static List<Armor> loadBuiltIn() {
+		List<Armor> armors = new ArrayList<>();
+
+		try (InputStream in = CustomArmors.class.getResourceAsStream("/assets/vanity/custom_armors.json")) {
+			if (in == null) throw new IOException("missing custom_armors.json");
+			JsonArray list = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonArray();
+
+			for (JsonElement element : list) {
+				JsonObject entry = element.getAsJsonObject();
+				String id = entry.get("id").getAsString();
+				armors.add(new Armor(id, entry.get("name").getAsString(), entry.get("color").getAsInt(), false,
+						entry.get("glow").getAsBoolean(), entry.get("pulse").getAsBoolean(), ArmorExtras.load(id)));
+			}
+		} catch (IOException | RuntimeException e) {
+			LOGGER.error("Vanity: couldn't read the built-in custom armors", e);
+		}
+
+		return List.copyOf(armors);
+	}
+
+	/** The custom armor an armor piece is drawn with, or null if it's normal armor. */
+	public static Armor byStack(ItemStack stack) {
+		Equippable equippable = stack.get(DataComponents.EQUIPPABLE);
+		if (equippable == null || equippable.assetId().isEmpty()) return null;
+		Identifier id = equippable.assetId().get().identifier();
+		if (!id.getNamespace().equals("vanity")) return null;
+		return find(PREFIX + id.getPath());
+	}
 
 	private static final int MAX_USER_ARMORS = 32;
 	private static final List<Armor> USER = new ArrayList<>();
@@ -144,14 +184,15 @@ public final class CustomArmors {
 			try (Stream<Path> list = Files.list(folder)) {
 				list.filter(path -> {
 					String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-					return name.endsWith(".png") && !name.endsWith("_leggings.png") && Files.isRegularFile(path);
+					return name.endsWith(".png") && !name.endsWith("_leggings.png") && !name.endsWith("_glow.png") && Files.isRegularFile(path);
 				}).sorted().limit(MAX_USER_ARMORS).forEach(files::add);
 			}
 
 			for (Path file : files) {
 				scan.append(file.getFileName()).append(Files.getLastModifiedTime(file).toMillis());
-				Path legs = leggingsFile(file);
-				if (Files.isRegularFile(legs)) scan.append(Files.getLastModifiedTime(legs).toMillis());
+				for (Path extra : List.of(leggingsFile(file), siblingFile(file, "_glow"), siblingFile(file, "_leggings_glow"))) {
+					if (Files.isRegularFile(extra)) scan.append(extra.getFileName()).append(Files.getLastModifiedTime(extra).toMillis());
+				}
 				scan.append(';');
 			}
 
@@ -175,6 +216,11 @@ public final class CustomArmors {
 		return file.resolveSibling(name.substring(0, name.length() - 4) + "_leggings.png");
 	}
 
+	private static Path siblingFile(Path file, String suffix) {
+		String name = file.getFileName().toString();
+		return file.resolveSibling(name.substring(0, name.length() - 4) + suffix + ".png");
+	}
+
 	private static void loadUserArmor(Minecraft client, Path file) {
 		String fileName = file.getFileName().toString();
 		String stem = fileName.substring(0, fileName.length() - 4);
@@ -191,12 +237,24 @@ public final class CustomArmors {
 			register(client, Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/humanoid/" + id + ".png"), main);
 			register(client, Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/humanoid_leggings/" + id + ".png"), legs);
 
+			// Optional glow: <name>_glow.png (and <name>_leggings_glow.png), drawn full-bright on top
+			boolean glow = false;
+			NativeImage glowMain = Files.isRegularFile(siblingFile(file, "_glow")) ? read(siblingFile(file, "_glow")) : null;
+
+			if (glowMain != null) {
+				NativeImage glowLegs = Files.isRegularFile(siblingFile(file, "_leggings_glow")) ? read(siblingFile(file, "_leggings_glow")) : copy(glowMain);
+				if (glowLegs == null) glowLegs = copy(glowMain);
+				register(client, Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/humanoid/" + id + "_glow.png"), glowMain);
+				register(client, Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/humanoid_leggings/" + id + "_glow.png"), glowLegs);
+				glow = true;
+			}
+
 			Identifier layer = Identifier.fromNamespaceAndPath("vanity", id);
 			USER_INFO.put(layer, EquipmentClientInfo.builder()
 					.addLayers(EquipmentClientInfo.LayerType.HUMANOID, new EquipmentClientInfo.Layer(layer))
 					.addLayers(EquipmentClientInfo.LayerType.HUMANOID_LEGGINGS, new EquipmentClientInfo.Layer(layer))
 					.build());
-			USER.add(new Armor(id, prettyName(stem), color, true));
+			USER.add(new Armor(id, prettyName(stem), color, true, glow, false, List.of()));
 		} catch (IOException | RuntimeException e) {
 			LOGGER.warn("Vanity: couldn't load custom armor {}", file, e);
 		}
@@ -265,7 +323,7 @@ public final class CustomArmors {
 	/** Makes the folder with a README, a template (each face in its own color) and an example to copy. */
 	private static void createFolder(Path folder) throws IOException {
 		Files.createDirectories(folder.resolve("examples"));
-		for (String name : List.of("template.png", "template_leggings.png", "example.png", "example_leggings.png")) {
+		for (String name : List.of("template.png", "template_leggings.png", "example.png", "example_leggings.png", "example_glow.png")) {
 			try (InputStream in = CustomArmors.class.getResourceAsStream("/assets/vanity/armor_folder/" + name)) {
 				if (in != null) Files.copy(in, folder.resolve("examples").resolve(name));
 			}
@@ -279,6 +337,9 @@ public final class CustomArmors {
 
 				  <name>.png           helmet, chestplate and boots (64x32, like vanilla armor textures)
 				  <name>_leggings.png  leggings (optional; <name>.png is used if it's missing)
+				  <name>_glow.png      optional: pixels that glow in the dark, drawn over the armor at full
+				                       brightness (same layout; leave everything else transparent).
+				                       <name>_leggings_glow.png does the same for leggings.
 
 				Bigger sizes work too, as long as it's twice as wide as tall (128x64, 256x128).
 				examples/template.png shows which pixels go on which face: front is red, sides orange and blue,

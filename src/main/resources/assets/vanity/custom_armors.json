@@ -2,41 +2,65 @@
   {
     "id": "frostforged",
     "name": "Frostforged",
-    "color": 8046827
+    "color": 8046827,
+    "glow": true,
+    "pulse": false,
+    "parts": 7
   },
   {
     "id": "obsidian_knight",
     "name": "Obsidian Knight",
-    "color": 3811922
+    "color": 3811922,
+    "glow": true,
+    "pulse": true,
+    "parts": 10
   },
   {
     "id": "ember",
     "name": "Ember",
-    "color": 12603418
+    "color": 12603418,
+    "glow": true,
+    "pulse": true,
+    "parts": 8
   },
   {
     "id": "verdant",
     "name": "Verdant",
-    "color": 4094522
+    "color": 4094522,
+    "glow": true,
+    "pulse": false,
+    "parts": 9
   },
   {
     "id": "royal_guard",
     "name": "Royal Guard",
-    "color": 15263454
+    "color": 15263454,
+    "glow": false,
+    "pulse": false,
+    "parts": 6
   },
   {
     "id": "void_walker",
     "name": "Void Walker",
-    "color": 2757702
+    "color": 2757702,
+    "glow": true,
+    "pulse": true,
+    "parts": 6
   },
   {
     "id": "sakura",
     "name": "Sakura",
-    "color": 15902659
+    "color": 15902659,
+    "glow": false,
+    "pulse": false,
+    "parts": 6
   },
   {
     "id": "circuit",
     "name": "Circuit",
-    "color": 2920360
+    "color": 2920360,
+    "glow": true,
+    "pulse": false,
+    "parts": 10
   }
 ]

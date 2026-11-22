@@ -46,6 +46,8 @@ public final class SlotSettings {
 	public float dyeSpeed = 1.0F;
 	/** Armor opacity, 0.1 (ghostly) to 1 (solid). */
 	public float opacity = 1.0F;
+	/** Custom armors: draw their 3D pieces (horns, crests, shoulder plates...). */
+	public boolean extras = true;
 	/** How much the armor glows in the dark, 0 to 1. */
 	public float glow;
 	/** How the glow (armor and trim) moves: steady, breathe, rainbow or flicker. */
@@ -253,6 +255,7 @@ public final class SlotSettings {
 		copy.dyeSpeed = this.dyeSpeed;
 		copy.opacity = this.opacity;
 		copy.glow = this.glow;
+		copy.extras = this.extras;
 		copy.glowAnimation = this.glowAnimation;
 		copy.trimGlowAmount = this.trimGlowAmount;
 		copy.rune = this.rune.copy();

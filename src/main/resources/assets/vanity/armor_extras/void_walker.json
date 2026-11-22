@@ -1,0 +1,189 @@
+{
+ "texture_size": [
+  64,
+  64
+ ],
+ "parts": [
+  {
+   "name": "halo_front",
+   "bone": "head",
+   "tex": [
+    0,
+    0
+   ],
+   "box": [
+    -5,
+    0,
+    -5,
+    10,
+    1,
+    1
+   ],
+   "pivot": [
+    0,
+    -12.5,
+    0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": true,
+   "spin": 40,
+   "bob": 0.6,
+   "phase": 0
+  },
+  {
+   "name": "halo_back",
+   "bone": "head",
+   "tex": [
+    22,
+    0
+   ],
+   "box": [
+    -5,
+    0,
+    4,
+    10,
+    1,
+    1
+   ],
+   "pivot": [
+    0,
+    -12.5,
+    0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": true,
+   "spin": 40,
+   "bob": 0.6,
+   "phase": 0
+  },
+  {
+   "name": "halo_right",
+   "bone": "head",
+   "tex": [
+    44,
+    0
+   ],
+   "box": [
+    -5,
+    0,
+    -4,
+    1,
+    1,
+    8
+   ],
+   "pivot": [
+    0,
+    -12.5,
+    0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": true,
+   "spin": 40,
+   "bob": 0.6,
+   "phase": 0
+  },
+  {
+   "name": "halo_left",
+   "bone": "head",
+   "tex": [
+    0,
+    9
+   ],
+   "box": [
+    4,
+    0,
+    -4,
+    1,
+    1,
+    8
+   ],
+   "pivot": [
+    0,
+    -12.5,
+    0
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "glow": true,
+   "spin": 40,
+   "bob": 0.6,
+   "phase": 0
+  },
+  {
+   "name": "orb",
+   "bone": "body",
+   "tex": [
+    18,
+    9
+   ],
+   "box": [
+    -1,
+    -1,
+    -1,
+    2,
+    2,
+    2
+   ],
+   "pivot": [
+    -8,
+    -3,
+    0
+   ],
+   "rot": [
+    45,
+    45,
+    0
+   ],
+   "glow": true,
+   "spin": 90,
+   "bob": 1.2,
+   "phase": 0
+  },
+  {
+   "name": "orb_m",
+   "bone": "body",
+   "tex": [
+    18,
+    9
+   ],
+   "box": [
+    -1,
+    -1,
+    -1,
+    2,
+    2,
+    2
+   ],
+   "pivot": [
+    8,
+    -3,
+    0
+   ],
+   "rot": [
+    45,
+    -45,
+    0
+   ],
+   "glow": true,
+   "spin": 90,
+   "bob": 1.2,
+   "phase": 1.7,
+   "mirror": true
+  }
+ ]
+}
