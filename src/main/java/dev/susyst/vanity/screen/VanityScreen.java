@@ -233,7 +233,6 @@ public final class VanityScreen extends Screen {
 				case LOOK -> {
 					target.invisible = source.invisible;
 					target.onlyWhenWorn = source.onlyWhenWorn;
-					target.extras = source.extras;
 				}
 				case STYLE -> target.copyStyleFrom(source);
 				case TRIM -> target.copyTrimFrom(source);
@@ -592,7 +591,7 @@ public final class VanityScreen extends Screen {
 				config().get(slot).setLook(look);
 			}
 			this.syncItemBox();
-		}).setTooltip(tip("Change how all four slots look: vanilla armor, Vanity's own designs, or armor you draw yourself. Your real armor stays the same."));
+		}).setTooltip(tip("Change how all four slots look: vanilla armor or armor you draw yourself. Your real armor stays the same."));
 
 		int smallW = 36;
 		int boxW = this.panelW - 3 * (smallW + GAP);
@@ -620,17 +619,13 @@ public final class VanityScreen extends Screen {
 		clear.setTooltip(tip("Go back to your real armor in this slot"));
 		this.singleSlotWidgets.addAll(List.of(held, worn, clear));
 
-		GlassButton invisible = this.button(Page.LOOK, this.panelX, r3, thirdW, "", () -> this.current().invisible = !this.current().invisible);
+		GlassButton invisible = this.button(Page.LOOK, this.panelX, r3, halfW, "", () -> this.current().invisible = !this.current().invisible);
 		invisible.setTooltip(tip("Show nothing in this slot, not even your real armor"));
 		this.sync(() -> invisible.setMessage(Component.literal("Invisible: " + onOff(this.current().invisible))));
 
-		GlassButton wornOnly = this.button(Page.LOOK, x2, r3, thirdW, "", () -> this.current().onlyWhenWorn = !this.current().onlyWhenWorn);
+		GlassButton wornOnly = this.button(Page.LOOK, this.panelX + halfW + GAP, r3, halfW, "", () -> this.current().onlyWhenWorn = !this.current().onlyWhenWorn);
 		wornOnly.setTooltip(tip("Hide: the look and rune go away when you take the armor off. Show: they stay with nothing equipped."));
 		this.sync(() -> wornOnly.setMessage(Component.literal("No armor: " + (this.current().onlyWhenWorn ? "Hide" : "Show"))));
-
-		GlassButton extras = this.button(Page.LOOK, x3, r3, thirdW, "", () -> this.current().extras = !this.current().extras);
-		extras.setTooltip(tip("Vanity's own armors: show their 3D pieces (horns, crests, shoulder plates, crystals, halo...)"));
-		this.sync(() -> extras.setMessage(Component.literal("3D: " + onOff(this.current().extras))));
 
 		// ---- Style ----
 		this.dropdown(Page.STYLE, this.panelX, r0, thirdW, "Glint", () -> enumOptions(GlintMode.values(), g -> g.label), () -> this.current().glint.ordinal(),

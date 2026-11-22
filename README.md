@@ -66,23 +66,12 @@ Get the jar from [Releases](https://github.com/Susyst/vanity/releases).
 
 ## Custom armors
 
-- **Vanity's own designs**, not in vanilla: Frostforged, Obsidian Knight, Ember, Verdant, Royal Guard, Void Walker,
-  Sakura and Circuit. Pick them in **All slots look like**, or type `vanity:frostforged` in a slot. They're worn
-  through the normal armor renderer, so trims, glint, opacity, glow and runes work on them, and texture packs can
-  change them (`assets/vanity/textures/entity/equipment/humanoid/<id>.png`).
-  - Parts of them **glow in the dark** (lava cracks, circuit lines, stars, gems), some with a slow pulse.
-  - Drawn at **vanilla resolution** as separate plates with gaps between them (open elbows and waist, open-faced
-    helmets for most), so they look like armor worn over your skin rather than a suit.
-  - **3D shapes** that change the silhouette: curved horns, crests, plumes,
-    layered pauldrons, capes, ice crystals, antlers and leaves, a samurai crest and banner, an antenna and power core,
-    a halo with orbiting orbs and spectral wings. Arms, legs and feet are shaped too: ridged breastplates, domed knee
-    guards, greaves, armored feet with toes (pointed, broad or clawed), elbow spikes, flame fins, winding vines, roots, a
-    flared samurai neck guard, a circling drone. Capes and banners sway. **3D: OFF** on the Look page hides them.
 - **Your own armor**: **All slots look like → + Your own armor...** opens `config/vanity/armors`. Put `<name>.png`
   there (a 64x32 armor texture, or 128x64 and up) and optionally `<name>_leggings.png` and `<name>_glow.png` (pixels
   that glow in the dark); it shows up as "<Name> (yours)"
   the next time you open the wardrobe (or type `vanity:user/<name>`). `examples/template.png` shows which pixels go on
-  which face, and `examples/example.png` is Frostforged to start from.
+  which face, and `examples/example.png` is a finished set to start from. It's worn through the normal armor
+  renderer, so trims, glint, opacity, glow and runes work on it.
 
 ## Hit and kill effects
 

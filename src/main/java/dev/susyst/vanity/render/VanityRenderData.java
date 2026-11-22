@@ -23,10 +23,8 @@ public final class VanityRenderData {
 	public final float[] trimGlow = new float[CosmeticSlot.values().length];
 	/** RGB color the glow is tinted with right now (rainbow glow), or -1 for the armor's own colors. */
 	public final int[] glowTint = new int[CosmeticSlot.values().length];
-	/** The custom armor shown in each slot (for its glow and 3D pieces), or null. */
+	/** The custom armor shown in each slot (for its glow), or null. */
 	public final CustomArmors.Armor[] custom = new CustomArmors.Armor[CosmeticSlot.values().length];
-	/** Whether to draw the custom armor's 3D pieces. */
-	public final boolean[] extras = new boolean[CosmeticSlot.values().length];
 
 	public VanityRenderData() {
 		Arrays.fill(this.armor, ItemStack.EMPTY);

@@ -78,7 +78,6 @@ public final class VanityCosmetics {
 			data.trimGlow[i] = 0.0F;
 			data.glowTint[i] = -1;
 			data.custom[i] = null;
-			data.extras[i] = false;
 			if (!config.enabled) continue;
 
 			SlotSettings settings = config.get(slot);
@@ -91,7 +90,6 @@ public final class VanityCosmetics {
 
 			if (settings.hasDesign()) data.designs[i] = enabledLayers(settings, now);
 			data.custom[i] = CustomArmors.byStack(shown);
-			data.extras[i] = settings.extras;
 			data.opacity[i] = settings.opacity;
 			// Animated glow: strength (breathe, flicker) and color (rainbow) for this frame
 			float strength = settings.glowAnimation.strength(settings.dyeSpeed, now);

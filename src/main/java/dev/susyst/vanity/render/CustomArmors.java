@@ -2,8 +2,6 @@ package dev.susyst.vanity.render;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -13,10 +11,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.mojang.blaze3d.platform.NativeImage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,19 +33,18 @@ import net.minecraft.world.item.equipment.EquipmentAssets;
 import net.minecraft.world.item.equipment.Equippable;
 
 /**
- * Armor that isn't in vanilla: Vanity's own designs (assets/vanity/equipment/*.json, so texture packs can change
- * them) and armor you draw yourself, loaded from config/vanity/armors/<name>.png and <name>_leggings.png.
- * They're worn through the normal armor renderer, so trims, glint, opacity, glow and runes all work on them.
+ * Armor you draw yourself, loaded from config/vanity/armors/<name>.png and <name>_leggings.png. It's worn through the
+ * normal armor renderer, so trims, glint, opacity, glow and runes all work on it.
  */
 public final class CustomArmors {
 	private static final Logger LOGGER = LoggerFactory.getLogger("vanity");
 	public static final String PREFIX = "vanity:";
 
 	/**
-	 * A custom armor: {@code id} is "frostforged" or, for your own, "user/<file name>". {@code glow}: it has
-	 * <id>_glow.png textures drawn full-bright on top; {@code pulse}: that glow breathes. {@code extras}: its 3D pieces.
+	 * A custom armor: {@code id} is "user/<file name>". {@code glow}: it has <id>_glow.png textures drawn full-bright
+	 * on top; {@code pulse}: that glow breathes.
 	 */
-	public record Armor(String id, String name, int color, boolean user, boolean glow, boolean pulse, List<ArmorExtras.Piece> extras) {
+	public record Armor(String id, String name, int color, boolean user, boolean glow, boolean pulse) {
 		public String lookId() {
 			return PREFIX + this.id;
 		}
@@ -64,33 +57,6 @@ public final class CustomArmors {
 		public Identifier glowTexture(EquipmentClientInfo.LayerType layerType) {
 			return Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/" + layerType.getSerializedName() + "/" + this.id + "_glow.png");
 		}
-
-		public Identifier extrasTexture() {
-			return Identifier.fromNamespaceAndPath("vanity", "textures/entity/equipment/extras/" + this.id + ".png");
-		}
-	}
-
-	/** Vanity's own designs, listed in assets/vanity/custom_armors.json (written by tools/make_armor_textures.py). */
-	public static final List<Armor> BUILT_IN = loadBuiltIn();
-
-	private static List<Armor> loadBuiltIn() {
-		List<Armor> armors = new ArrayList<>();
-
-		try (InputStream in = CustomArmors.class.getResourceAsStream("/assets/vanity/custom_armors.json")) {
-			if (in == null) throw new IOException("missing custom_armors.json");
-			JsonArray list = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonArray();
-
-			for (JsonElement element : list) {
-				JsonObject entry = element.getAsJsonObject();
-				String id = entry.get("id").getAsString();
-				armors.add(new Armor(id, entry.get("name").getAsString(), entry.get("color").getAsInt(), false,
-						entry.get("glow").getAsBoolean(), entry.get("pulse").getAsBoolean(), ArmorExtras.load(id)));
-			}
-		} catch (IOException | RuntimeException e) {
-			LOGGER.error("Vanity: couldn't read the built-in custom armors", e);
-		}
-
-		return List.copyOf(armors);
 	}
 
 	/** The custom armor an armor piece is drawn with, or null if it's normal armor. */
@@ -115,11 +81,9 @@ public final class CustomArmors {
 		return FabricLoader.getInstance().getConfigDir().resolve("vanity").resolve("armors");
 	}
 
-	/** Built-in designs, then your own. */
+	/** Your own armors, in file name order. */
 	public static List<Armor> all() {
-		List<Armor> all = new ArrayList<>(BUILT_IN);
-		all.addAll(USER);
-		return all;
+		return List.copyOf(USER);
 	}
 
 	public static Armor find(String lookId) {
@@ -254,7 +218,7 @@ public final class CustomArmors {
 					.addLayers(EquipmentClientInfo.LayerType.HUMANOID, new EquipmentClientInfo.Layer(layer))
 					.addLayers(EquipmentClientInfo.LayerType.HUMANOID_LEGGINGS, new EquipmentClientInfo.Layer(layer))
 					.build());
-			USER.add(new Armor(id, prettyName(stem), color, true, glow, false, List.of()));
+			USER.add(new Armor(id, prettyName(stem), color, true, glow, false));
 		} catch (IOException | RuntimeException e) {
 			LOGGER.warn("Vanity: couldn't load custom armor {}", file, e);
 		}
@@ -343,7 +307,7 @@ public final class CustomArmors {
 
 				Bigger sizes work too, as long as it's twice as wide as tall (128x64, 256x128).
 				examples/template.png shows which pixels go on which face: front is red, sides orange and blue,
-				back purple, top yellow. examples/example.png is Vanity's Frostforged armor to start from.
+				back purple, top yellow. examples/example.png is a finished armor to start from.
 				Files in the examples folder aren't loaded; copy one up here to use it.
 
 				Changes load the next time you open the wardrobe.
