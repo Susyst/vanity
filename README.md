@@ -8,7 +8,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.13.1.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.14.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. On the **Look** page, open **All slots look like** to change all four slots at once: Leather, Chainmail, Iron,
    Gold, Copper, Diamond or Netherite (**Real armor** turns it off).
@@ -63,6 +63,24 @@ bounding box (`ItemStackRenderState#getModelBoundingBox`) and scales/centers it 
 ## Download
 
 Get the jar from [Releases](https://github.com/Susyst/vanity/releases).
+
+## Custom armors
+
+- **Vanity's own designs**, not in vanilla: Frostforged, Obsidian Knight, Ember, Verdant, Royal Guard, Void Walker,
+  Sakura and Circuit. Pick them in **All slots look like**, or type `vanity:frostforged` in a slot. They're worn
+  through the normal armor renderer, so trims, glint, opacity, glow and runes work on them, and texture packs can
+  change them (`assets/vanity/textures/entity/equipment/humanoid/<id>.png`).
+- **Your own armor**: **All slots look like → + Your own armor...** opens `config/vanity/armors`. Put `<name>.png`
+  there (a 64x32 armor texture, or 128x64 and up) and optionally `<name>_leggings.png`; it shows up as "<Name> (yours)"
+  the next time you open the wardrobe (or type `vanity:user/<name>`). `examples/template.png` shows which pixels go on
+  which face, and `examples/example.png` is Frostforged to start from.
+
+## Hit and kill effects
+
+**Hand → Hit & kill**: particles where you hit something (Sparks, Blood, Hearts, Flame, Soul fire, Rainbow, Lightning,
+Magic, Notes) and an effect where something you hit dies (Soul burst, Lightning, Firework, Blood, Hearts, Totem,
+Explosion, Rainbow ring, Void). Color (for Sparks and Firework), size, amount, sounds, and whether they play on players.
+**Try it** plays them in front of you. Only you see them.
 
 ## SkyBlock and custom textures
 

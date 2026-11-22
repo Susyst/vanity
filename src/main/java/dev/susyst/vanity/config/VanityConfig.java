@@ -30,6 +30,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 
+import dev.susyst.vanity.render.CustomArmors;
+
 import net.fabricmc.loader.api.FabricLoader;
 
 /** Persistent Vanity settings, stored in config/vanity.json. */
@@ -51,6 +53,8 @@ public final class VanityConfig {
 	public List<Outfit> outfits = new ArrayList<>();
 	/** Index of the outfit worn or saved last, or -1. */
 	public int outfit = -1;
+	/** Hit and kill effects. */
+	public CombatEffects combat = new CombatEffects();
 	/** Held-item skins. */
 	public List<ItemSkin> itemSkins = new ArrayList<>();
 	/** Items grabbed with the Grab key (hover an item in any inventory and press it), to use as looks. */
@@ -147,6 +151,8 @@ public final class VanityConfig {
 		for (Outfit outfit : this.outfits) outfit.sanitize();
 		if (this.outfit >= this.outfits.size()) this.outfit = -1;
 
+		if (this.combat == null) this.combat = new CombatEffects();
+		this.combat.sanitize();
 		if (this.picks == null) this.picks = new ArrayList<>();
 		this.picks.removeIf(json -> json == null || json.isJsonNull());
 		if (this.itemSkins == null) this.itemSkins = new ArrayList<>();
@@ -208,6 +214,7 @@ public final class VanityConfig {
 	 * and its name, so texture packs and mods that texture SkyBlock items by id show it, even if you don't own one.
 	 */
 	public static ItemStack resolveLook(String text, Item base) {
+		if (CustomArmors.isCustomId(text)) return CustomArmors.stack(text, base);
 		ItemStack plain = resolveItem(text);
 		if (!plain.isEmpty()) return plain;
 		String id = skyblockIdOf(text);

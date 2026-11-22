@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "vanity:ember"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "vanity:ember"
+      }
+    ]
+  }
+}

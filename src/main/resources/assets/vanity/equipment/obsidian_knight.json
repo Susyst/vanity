@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "vanity:obsidian_knight"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "vanity:obsidian_knight"
+      }
+    ]
+  }
+}

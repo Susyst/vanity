@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "vanity:void_walker"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "vanity:void_walker"
+      }
+    ]
+  }
+}

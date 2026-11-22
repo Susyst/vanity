@@ -42,6 +42,8 @@ import dev.susyst.vanity.config.RuneEffect;
 import dev.susyst.vanity.config.RuneShape;
 import dev.susyst.vanity.AutoOutfits;
 import dev.susyst.vanity.config.DyeAnimation;
+import dev.susyst.vanity.config.HitEffect;
+import dev.susyst.vanity.config.KillEffect;
 import dev.susyst.vanity.config.GlowAnimation;
 import dev.susyst.vanity.config.ItemSkin;
 import dev.susyst.vanity.config.Outfit;
@@ -51,6 +53,8 @@ import dev.susyst.vanity.config.TrimLayer;
 import dev.susyst.vanity.config.TrimMode;
 import dev.susyst.vanity.config.Trims;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.render.CombatParticles;
+import dev.susyst.vanity.render.CustomArmors;
 import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.render.VanityCosmetics;
 
@@ -78,7 +82,9 @@ public final class VanityScreen extends Screen {
 		RUNE("Rune"),
 		OUTFITS("Outfits"),
 		/** Held-item skins; opened with the Hand tab, not a page tab. */
-		HAND("Hand");
+		HAND("Item skins"),
+		/** Hit and kill effects, the Hand tab's second page. */
+		EFFECTS("Hit & kill");
 
 		final String label;
 
@@ -87,7 +93,11 @@ public final class VanityScreen extends Screen {
 		}
 
 		boolean hasTab() {
-			return this != HAND;
+			return !this.isHand();
+		}
+
+		boolean isHand() {
+			return this == HAND || this == EFFECTS;
 		}
 	}
 
@@ -125,6 +135,7 @@ public final class VanityScreen extends Screen {
 	private final List<GlassButton> slotTabs = new ArrayList<>();
 	private GlassButton allTab;
 	private GlassButton handTab;
+	private final List<GlassButton> handPageTabs = new ArrayList<>();
 	private final Map<Page, GlassButton> pageTabs = new EnumMap<>(Page.class);
 	private final Map<Page, List<AbstractWidget>> pageWidgets = new EnumMap<>(Page.class);
 	/** Widgets only shown when editing one slot. */
@@ -227,7 +238,7 @@ public final class VanityScreen extends Screen {
 				case TRIM -> target.copyTrimFrom(source);
 				case DESIGN -> target.copyDesignFrom(source);
 				case RUNE -> target.rune = source.rune.copy();
-				case OUTFITS, HAND -> {
+				case OUTFITS, HAND, EFFECTS -> {
 				}
 			}
 		}
@@ -382,13 +393,35 @@ public final class VanityScreen extends Screen {
 		List<Option> options = new ArrayList<>();
 		options.add(Option.of("Real armor"));
 		for (ArmorSet set : ArmorSet.values()) options.add(Option.of(set.label));
+		for (CustomArmors.Armor armor : CustomArmors.all()) options.add(new Option(armor.name() + (armor.user() ? " (yours)" : ""), armor.color()));
+		options.add(Option.of("+ Your own armor..."));
 		return options;
 	}
 
 	private static int armorSetIndex() {
 		ArmorSet set = ArmorSet.wornBy(config());
 		if (set != null) return set.ordinal() + 1;
+		List<CustomArmors.Armor> custom = CustomArmors.all();
+
+		for (int i = 0; i < custom.size(); i++) {
+			String id = custom.get(i).lookId();
+			boolean all = true;
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				SlotSettings s = config().get(slot);
+				if (!id.equalsIgnoreCase(s.item) || s.itemStack != null) all = false;
+			}
+			if (all) return 1 + ArmorSet.values().length + i;
+		}
+
 		return ArmorSet.noneWorn(config()) ? 0 : -1;
+	}
+
+	/** Opens config/vanity/armors in your file browser, with a note on what to put there. */
+	private void openArmorFolder() {
+		CustomArmors.reloadUserArmors(this.minecraft);
+		com.mojang.blaze3d.Blaze3D.openPath(CustomArmors.folder());
+		net.minecraft.client.gui.components.toasts.SystemToast.addOrUpdate(this.minecraft.gui.toastManager(), new net.minecraft.client.gui.components.toasts.SystemToast.SystemToastId(6000L),
+				Component.literal("Your armor folder"), Component.literal("Add <name>.png (64x32 armor texture), see README.txt. Reopen the wardrobe to load it."));
 	}
 
 	private static List<Option> patternOptions() {
@@ -464,6 +497,8 @@ public final class VanityScreen extends Screen {
 
 	@Override
 	protected void init() {
+		// Pick up armor PNGs added to config/vanity/armors since last time
+		CustomArmors.reloadUserArmors(this.minecraft);
 		this.initialized = false;
 		this.menu = null;
 		this.slotTabs.clear();
@@ -498,11 +533,13 @@ public final class VanityScreen extends Screen {
 		}
 
 		this.handTab = this.button(null, this.panelX + (slots.length + 1) * (tabW + 2), y, this.panelX + this.panelW - (this.panelX + (slots.length + 1) * (tabW + 2)), "Hand", GlassButton.Style.SEGMENT, () -> {
-			if (this.page != Page.HAND) this.lastPage = this.page;
-			this.page = Page.HAND;
+			if (!this.page.isHand()) {
+				this.lastPage = this.page;
+				this.page = Page.HAND;
+			}
 			this.all = false;
 		});
-		this.handTab.setTooltip(tip("Item skins: make the items you hold look like other items"));
+		this.handTab.setTooltip(tip("Item skins for what you hold, and hit & kill effects"));
 
 		// Page tabs
 		y += step;
@@ -512,6 +549,17 @@ public final class VanityScreen extends Screen {
 		for (int i = 0; i < pages.length; i++) {
 			Page p = pages[i];
 			this.pageTabs.put(p, this.button(null, this.panelX + i * pageW, y, pageW, p.label, GlassButton.Style.TAB, () -> this.page = p));
+		}
+
+		// On the Hand tab the page tabs are Item skins and Hit & kill
+		this.handPageTabs.clear();
+		Page[] handPages = {Page.HAND, Page.EFFECTS};
+		int handW = this.panelW / handPages.length;
+
+		for (int i = 0; i < handPages.length; i++) {
+			Page p = handPages[i];
+			GlassButton tab = this.button(null, this.panelX + i * handW, y, handW, p.label, GlassButton.Style.TAB, () -> this.page = p);
+			this.handPageTabs.add(tab);
 		}
 
 		this.contentY = y + ROW + 10;
@@ -527,11 +575,23 @@ public final class VanityScreen extends Screen {
 
 		// ---- Look ----
 		this.dropdown(Page.LOOK, this.panelX, r0, this.panelW, "All slots look like", VanityScreen::armorSetOptions, VanityScreen::armorSetIndex, index -> {
+			int vanilla = ArmorSet.values().length;
+			List<CustomArmors.Armor> custom = CustomArmors.all();
+
+			if (index == 1 + vanilla + custom.size()) {
+				this.openArmorFolder();
+				return;
+			}
+
 			for (CosmeticSlot slot : CosmeticSlot.values()) {
-				config().get(slot).setLook(index == 0 ? "" : ArmorSet.values()[index - 1].itemId(slot));
+				String look;
+				if (index == 0) look = "";
+				else if (index <= vanilla) look = ArmorSet.values()[index - 1].itemId(slot);
+				else look = custom.get(index - 1 - vanilla).lookId();
+				config().get(slot).setLook(look);
 			}
 			this.syncItemBox();
-		}).setTooltip(tip("Change how all four slots look. Your real armor stays the same; only the look changes."));
+		}).setTooltip(tip("Change how all four slots look: vanilla armor, Vanity's own designs, or armor you draw yourself. Your real armor stays the same."));
 
 		int smallW = 36;
 		int boxW = this.panelW - 3 * (smallW + GAP);
@@ -752,6 +812,28 @@ public final class VanityScreen extends Screen {
 			auto.setTooltip(tip("Put this outfit on automatically every time you join " + AutoOutfits.describe(key)));
 		});
 
+		// ---- Hit & kill effects (Hand tab) ----
+		this.dropdown(Page.EFFECTS, this.panelX, r0, halfW, "Hit", () -> enumOptions(HitEffect.values(), e -> e.label), () -> config().combat.hit.ordinal(),
+				index -> config().combat.hit = HitEffect.values()[index]).setTooltip(tip("Particles where you hit something"));
+		this.dropdown(Page.EFFECTS, this.panelX + halfW + GAP, r0, halfW, "Kill", () -> enumOptions(KillEffect.values(), e -> e.label), () -> config().combat.kill.ordinal(),
+				index -> config().combat.kill = KillEffect.values()[index]).setTooltip(tip("What happens where something you hit dies"));
+		this.colorRow(Page.EFFECTS, r1, () -> config().combat.color, color -> config().combat.color = color);
+		this.slider(Page.EFFECTS, this.panelX, r2, thirdW, "Size", 0.5, 2.0, 0.1, "%.1fx", s -> config().combat.size, (s, v) -> config().combat.size = v);
+		this.slider(Page.EFFECTS, x2, r2, thirdW, "Amount", 0.25, 3.0, 0.25, "%.2fx", s -> config().combat.amount, (s, v) -> config().combat.amount = v);
+		GlassButton sounds = this.button(Page.EFFECTS, x3, r2, thirdW, "", () -> config().combat.sounds = !config().combat.sounds);
+		sounds.setTooltip(tip("Sounds for kill effects (thunder, firework, totem...)"));
+		this.sync(() -> sounds.setMessage(Component.literal("Sounds: " + onOff(config().combat.sounds))));
+		this.hexBox(Page.EFFECTS, this.panelX, r3, thirdW, () -> config().combat.color, color -> config().combat.color = color);
+		GlassButton players = this.button(Page.EFFECTS, x2, r3, thirdW, "", () -> config().combat.onPlayers = !config().combat.onPlayers);
+		players.setTooltip(tip("Also play the effects when you hit or kill players"));
+		this.sync(() -> players.setMessage(Component.literal("Players: " + onOff(config().combat.onPlayers))));
+		GlassButton tryIt = this.button(Page.EFFECTS, x3, r3, thirdW, "Try it", GlassButton.Style.PRIMARY, () -> {
+			this.onClose();
+			CombatParticles.preview(this.minecraft);
+		});
+		tryIt.setTooltip(tip("Close the wardrobe and play the hit, then the kill effect, in front of you"));
+		this.hintY.put(Page.EFFECTS, r4 + 2);
+
 		// ---- Hand (held-item skins) ----
 		this.dropdown(Page.HAND, this.panelX, r0, this.panelW, "Skin", "None yet", this::skinOptions, () -> config().itemSkins.isEmpty() ? 0 : this.skinIndex,
 				index -> this.skinIndex = index).setTooltip(tip("Your item skins: pick one to edit it"));
@@ -842,7 +924,7 @@ public final class VanityScreen extends Screen {
 	}
 
 	private void leaveHand() {
-		if (this.page == Page.HAND) this.page = this.lastPage;
+		if (this.page.isHand()) this.page = this.lastPage;
 	}
 
 	private void newSkinFor(ItemStack target) {
@@ -890,7 +972,7 @@ public final class VanityScreen extends Screen {
 		this.syncing = true;
 
 		CosmeticSlot[] slots = CosmeticSlot.values();
-		boolean hand = this.page == Page.HAND;
+		boolean hand = this.page.isHand();
 		this.allTab.selected = this.all && !hand;
 		this.handTab.selected = hand;
 
@@ -901,6 +983,11 @@ public final class VanityScreen extends Screen {
 		for (Map.Entry<Page, GlassButton> entry : this.pageTabs.entrySet()) {
 			entry.getValue().selected = entry.getKey() == this.page;
 			entry.getValue().visible = !hand;
+		}
+
+		for (int i = 0; i < this.handPageTabs.size(); i++) {
+			this.handPageTabs.get(i).visible = hand;
+			this.handPageTabs.get(i).selected = this.page == (i == 0 ? Page.HAND : Page.EFFECTS);
 		}
 
 		for (Map.Entry<Page, List<AbstractWidget>> entry : this.pageWidgets.entrySet()) {
@@ -1338,6 +1425,7 @@ public final class VanityScreen extends Screen {
 			case RUNE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Particles only you see. Press F5 to look at them.");
 			case OUTFITS -> this.hint(graphics, "Press " + VanityClient.nextOutfitKeyName() + " in game to switch outfits.");
 			case HAND -> this.handStatus(graphics);
+			case EFFECTS -> this.hint(graphics, "Plays when you hit something, and where it dies if you hit it. Only you see it. Color is for Sparks and Firework.");
 		}
 
 		LocalPlayer player = this.minecraft.player;
@@ -1364,7 +1452,6 @@ public final class VanityScreen extends Screen {
 
 	/** Hand tab: a title where the page tabs are, what the picked skin does, and how to make one. */
 	private void handStatus(GuiGraphicsExtractor graphics) {
-		graphics.text(this.font, Component.literal("Item skins").withStyle(ChatFormatting.BOLD), this.panelX, this.contentY - 24, Glass.TEXT);
 		ItemSkin skin = this.skin();
 		int y = this.contentY + 4 * (ROW + GAP) + 6;
 

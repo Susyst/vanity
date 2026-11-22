@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "vanity:circuit"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "vanity:circuit"
+      }
+    ]
+  }
+}

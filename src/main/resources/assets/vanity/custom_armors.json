@@ -1,0 +1,42 @@
+[
+  {
+    "id": "frostforged",
+    "name": "Frostforged",
+    "color": 8046827
+  },
+  {
+    "id": "obsidian_knight",
+    "name": "Obsidian Knight",
+    "color": 3811922
+  },
+  {
+    "id": "ember",
+    "name": "Ember",
+    "color": 12603418
+  },
+  {
+    "id": "verdant",
+    "name": "Verdant",
+    "color": 4094522
+  },
+  {
+    "id": "royal_guard",
+    "name": "Royal Guard",
+    "color": 15263454
+  },
+  {
+    "id": "void_walker",
+    "name": "Void Walker",
+    "color": 2757702
+  },
+  {
+    "id": "sakura",
+    "name": "Sakura",
+    "color": 15902659
+  },
+  {
+    "id": "circuit",
+    "name": "Circuit",
+    "color": 2920360
+  }
+]

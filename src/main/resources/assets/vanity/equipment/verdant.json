@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "vanity:verdant"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "vanity:verdant"
+      }
+    ]
+  }
+}

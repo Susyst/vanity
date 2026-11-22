@@ -37,6 +37,13 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 
+import dev.susyst.vanity.config.HitEffect;
+import dev.susyst.vanity.config.KillEffect;
+import dev.susyst.vanity.render.CombatParticles;
+import dev.susyst.vanity.render.CustomArmors;
+import net.minecraft.client.resources.model.EquipmentAssetManager;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import dev.susyst.vanity.AutoOutfits;
 import dev.susyst.vanity.VanityClient;
 import dev.susyst.vanity.config.GlowAnimation;
@@ -167,6 +174,8 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testAnimatedDesignAndGlow(context, singleplayer);
 			testItemSkins(context, singleplayer);
 			testGrabPickAndSkyblockIds(context, singleplayer);
+			testCustomArmors(context);
+			testCombatEffects(context, singleplayer);
 			testAutoOutfit(context);
 		}
 	}
@@ -978,6 +987,131 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			int left = (screen.width - 176) / 2;
 			int top = (screen.height - 166) / 2;
 			return new double[] {(left + slot.x + 8) * scale, (top + slot.y + 8) * scale};
+		});
+	}
+
+	/** Vanity's own armor designs and armor drawn by you (a PNG in config/vanity/armors), worn through the real armor renderer. */
+	private static void testCustomArmors(ClientGameTestContext context) {
+		context.runOnClient(client -> {
+			for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).rune.enabled = false;
+		});
+
+		for (CustomArmors.Armor armor : CustomArmors.BUILT_IN) {
+			context.runOnClient(client -> {
+				VanityConfig config = VanityClient.config();
+				for (CosmeticSlot slot : CosmeticSlot.values()) {
+					config.get(slot).setLook(armor.lookId());
+					config.get(slot).resetArmorStyle();
+				}
+				check(VanityClient.equipmentAssets().get(armor.assetKey()) != EquipmentAssetManager.MISSING, armor.name() + " should have armor model layers");
+				ItemStack chest = drawnArmor(client, EquipmentSlot.CHEST);
+				check(chest.get(DataComponents.EQUIPPABLE).assetId().orElseThrow().equals(armor.assetKey()), armor.name() + " should be worn with its own textures, got " + chest);
+			});
+			context.waitTicks(3);
+			context.takeScreenshot("35_custom_armor_" + armor.id());
+		}
+
+		// Pick one from the look list
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.LOOK));
+		context.waitTicks(5);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("All slots look like"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).menuRowCenter("Void Walker"));
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			for (CosmeticSlot slot : CosmeticSlot.values()) {
+				check(VanityClient.config().get(slot).item.equals("vanity:void_walker"), slot.label + " should look like Void Walker, got " + VanityClient.config().get(slot).item);
+			}
+		});
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("All slots look like"));
+		context.waitTicks(2);
+		context.getInput().setCursorPos(1, 1);
+		context.waitTicks(2);
+		context.takeScreenshot("35b_wardrobe_custom_armor_list");
+		context.setScreen(() -> null);
+
+		// Your own armor: copy the template into the folder, reopen the wardrobe to load it
+		context.runOnClient(client -> {
+			try {
+				Path folder = CustomArmors.folder();
+				check(Files.isRegularFile(folder.resolve("README.txt")), "The armor folder should have a README");
+				Files.copy(folder.resolve("examples/template.png"), folder.resolve("my_armor.png"), StandardCopyOption.REPLACE_EXISTING);
+				Files.copy(folder.resolve("examples/template_leggings.png"), folder.resolve("my_armor_leggings.png"), StandardCopyOption.REPLACE_EXISTING);
+			} catch (java.io.IOException e) {
+				throw new AssertionError("Couldn't copy the armor template", e);
+			}
+		});
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.LOOK));
+		context.waitTicks(5);
+		context.setScreen(() -> null);
+		context.runOnClient(client -> {
+			CustomArmors.Armor mine = CustomArmors.find("vanity:user/my_armor");
+			check(mine != null && mine.user() && mine.name().equals("My Armor"), "Your armor PNG should load as \"My Armor\", got " + mine);
+			check(VanityClient.equipmentAssets().get(mine.assetKey()) != EquipmentAssetManager.MISSING, "Your armor should have model layers");
+			for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).setLook(mine.lookId());
+		});
+		context.waitTicks(3);
+		context.takeScreenshot("35c_your_own_armor_png");
+	}
+
+	/** Hit and kill effects on a real target: hit a pig, it dies, the kill effect plays where it was. */
+	private static void testCombatEffects(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		KillEffect[] kills = {KillEffect.FIREWORK, KillEffect.LIGHTNING, KillEffect.SOUL_BURST, KillEffect.RAINBOW_RING};
+		HitEffect[] hits = {HitEffect.SPARKS, HitEffect.LIGHTNING, HitEffect.SOUL, HitEffect.RAINBOW};
+
+		for (int i = 0; i < kills.length; i++) {
+			KillEffect kill = kills[i];
+			HitEffect hit = hits[i];
+			context.runOnClient(client -> {
+				VanityConfig config = VanityClient.config();
+				config.combat.hit = hit;
+				config.combat.kill = kill;
+				config.combat.color = 0x3FE0FF;
+				CombatParticles.lastHitParticles = 0;
+				CombatParticles.lastKillParticles = 0;
+			});
+			singleplayer.getServer().runCommand("kill @e[type=minecraft:pig]");
+			singleplayer.getServer().runCommand("execute at @p run summon minecraft:pig ^1.4 ^ ^0.6 {NoAI:1b,Health:1f,Silent:1b}");
+			context.waitTicks(5);
+			context.runOnClient(client -> {
+				Entity pig = null;
+				for (Entity entity : client.level.entitiesForRendering()) {
+					if (entity.getType() == EntityType.PIG && entity.isAlive()) pig = entity;
+				}
+				check(pig != null, "A pig should be there to hit");
+				client.gameMode.attack(client.player, pig);
+				check(CombatParticles.lastHitParticles > 0, hit.label + " hit effect should play");
+			});
+			context.waitTicks(1);
+			if (i == 0) context.takeScreenshot("36a_hit_effect_sparks");
+			context.waitTicks(4);
+			context.runOnClient(client -> check(CombatParticles.lastKillParticles > 0, kill.label + " kill effect should play when the pig dies"));
+			context.waitTicks(i == 0 ? 6 : 3);
+			context.takeScreenshot("36_kill_effect_" + kill.name().toLowerCase(java.util.Locale.ROOT));
+		}
+
+		// Try it, from the wardrobe
+		context.runOnClient(client -> {
+			VanityClient.config().combat.kill = KillEffect.TOTEM;
+			CombatParticles.lastKillParticles = 0;
+		});
+		context.setScreen(VanityScreen::hand);
+		context.waitTicks(3);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Hit & kill"));
+		context.waitTicks(3);
+		context.getInput().setCursorPos(1, 1);
+		context.waitTicks(2);
+		context.takeScreenshot("36e_wardrobe_hit_and_kill");
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Try it"));
+		context.waitTicks(14);
+		context.runOnClient(client -> {
+			check(client.gui.screen() == null, "Try it should close the wardrobe");
+			check(CombatParticles.lastKillParticles > 0, "Try it should play the kill effect");
+		});
+		context.takeScreenshot("36f_try_it_totem");
+		context.runOnClient(client -> {
+			VanityClient.config().combat.hit = HitEffect.NONE;
+			VanityClient.config().combat.kill = KillEffect.NONE;
 		});
 	}
 
