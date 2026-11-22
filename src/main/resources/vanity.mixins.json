@@ -3,6 +3,7 @@
 	"package": "dev.susyst.vanity.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"AbstractContainerScreenAccessor",
 		"AvatarRendererMixin",
 		"FirstPersonHandsAndItemsMixin",
 		"GuiGraphicsExtractorMixin",

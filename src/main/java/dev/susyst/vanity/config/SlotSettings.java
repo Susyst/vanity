@@ -6,7 +6,9 @@ import com.google.gson.JsonElement;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /** Settings for one cosmetic slot. Public fields are saved to config/vanity.json by Gson. */
 public final class SlotSettings {
@@ -68,7 +70,10 @@ public final class SlotSettings {
 	/** Extra size multiplier on top of the fit. */
 	public float scale = 1.0F;
 
+	/** Which slot this is (set by {@link VanityConfig#get}); picks the base item for a typed SkyBlock id. */
+	transient CosmeticSlot slot;
 	private transient String resolvedItem;
+	private transient CosmeticSlot resolvedSlot;
 	private transient JsonElement resolvedJson;
 	private transient HolderLookup.Provider resolvedRegistries;
 	private transient ItemStack resolvedStack = ItemStack.EMPTY;
@@ -79,18 +84,31 @@ public final class SlotSettings {
 		// once a world is loaded. Until then the plain item id is used.
 		HolderLookup.Provider registries = this.itemStack != null ? VanityConfig.registries() : null;
 
-		if (!Objects.equals(this.resolvedItem, this.item) || this.resolvedJson != this.itemStack || this.resolvedRegistries != registries) {
+		if (!Objects.equals(this.resolvedItem, this.item) || this.resolvedJson != this.itemStack || this.resolvedRegistries != registries || this.resolvedSlot != this.slot) {
 			ItemStack stack = ItemStack.EMPTY;
 			if (registries != null) stack = VanityConfig.decodeStack(this.itemStack, registries);
-			if (stack.isEmpty()) stack = VanityConfig.resolveItem(this.item);
+			if (stack.isEmpty()) stack = VanityConfig.resolveLook(this.item, skyblockBase(this.slot));
 
 			this.resolvedStack = stack;
+			this.resolvedSlot = this.slot;
 			this.resolvedItem = this.item;
 			this.resolvedJson = this.itemStack;
 			this.resolvedRegistries = registries;
 		}
 
 		return this.resolvedStack;
+	}
+
+	/** Typed SkyBlock armor ids become leather pieces (what most SkyBlock armor is), which packs then retexture. */
+	private static Item skyblockBase(CosmeticSlot slot) {
+		if (slot == null) return Items.LEATHER_CHESTPLATE;
+
+		return switch (slot) {
+			case HEAD -> Items.LEATHER_HELMET;
+			case CHEST -> Items.LEATHER_CHESTPLATE;
+			case LEGS -> Items.LEATHER_LEGGINGS;
+			case FEET -> Items.LEATHER_BOOTS;
+		};
 	}
 
 	/** Uses an existing item (held or worn) as the look, keeping all of its data. */

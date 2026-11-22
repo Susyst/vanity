@@ -19,10 +19,16 @@ import org.slf4j.LoggerFactory;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -47,16 +53,22 @@ public final class VanityConfig {
 	public int outfit = -1;
 	/** Held-item skins. */
 	public List<ItemSkin> itemSkins = new ArrayList<>();
+	/** Items grabbed with the Grab key (hover an item in any inventory and press it), to use as looks. */
+	public List<JsonElement> picks = new ArrayList<>();
+
+	public static final int MAX_PICKS = 36;
 
 	public static final int MAX_OUTFITS = 12;
 
 	public SlotSettings get(CosmeticSlot slot) {
-		return switch (slot) {
+		SlotSettings settings = switch (slot) {
 			case HEAD -> this.head;
 			case CHEST -> this.chest;
 			case LEGS -> this.legs;
 			case FEET -> this.feet;
 		};
+		settings.slot = slot;
+		return settings;
 	}
 
 	/** The outfit worn or saved last, or null. */
@@ -135,6 +147,8 @@ public final class VanityConfig {
 		for (Outfit outfit : this.outfits) outfit.sanitize();
 		if (this.outfit >= this.outfits.size()) this.outfit = -1;
 
+		if (this.picks == null) this.picks = new ArrayList<>();
+		this.picks.removeIf(json -> json == null || json.isJsonNull());
 		if (this.itemSkins == null) this.itemSkins = new ArrayList<>();
 		this.itemSkins.removeIf(java.util.Objects::isNull);
 		for (ItemSkin skin : this.itemSkins) skin.sanitize();
@@ -186,5 +200,99 @@ public final class VanityConfig {
 		Identifier key = Identifier.tryParse(id.trim().toLowerCase(Locale.ROOT));
 		if (key == null || !BuiltInRegistries.ITEM.containsKey(key)) return ItemStack.EMPTY;
 		return new ItemStack(BuiltInRegistries.ITEM.getValue(key));
+	}
+
+	/**
+	 * A look from what was typed: an item id ("netherite_sword"), or a SkyBlock id ("sb:DARK_CLAYMORE", or just
+	 * "DARK_CLAYMORE"). A SkyBlock id makes an item of {@code base} (or "@stone_sword" after the id) carrying that id
+	 * and its name, so texture packs and mods that texture SkyBlock items by id show it, even if you don't own one.
+	 */
+	public static ItemStack resolveLook(String text, Item base) {
+		ItemStack plain = resolveItem(text);
+		if (!plain.isEmpty()) return plain;
+		String id = skyblockIdOf(text);
+		if (id == null) return ItemStack.EMPTY;
+
+		Item item = base;
+		int at = text.indexOf('@');
+
+		if (at > 0) {
+			ItemStack chosen = resolveItem(text.substring(at + 1));
+			if (!chosen.isEmpty()) item = chosen.getItem();
+		}
+
+		if (item == null || item == Items.AIR) item = Items.PAPER;
+		ItemStack stack = new ItemStack(item);
+		CompoundTag tag = new CompoundTag();
+		tag.putString("id", id);
+		stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+		stack.set(DataComponents.CUSTOM_NAME, Component.literal(prettyName(id)).withStyle(style -> style.withItalic(false)));
+		return stack;
+	}
+
+	/** The SkyBlock id in typed text ("sb:dark_claymore" or "DARK_CLAYMORE@stone_sword" give "DARK_CLAYMORE"), or null. */
+	public static String skyblockIdOf(String text) {
+		if (text == null) return null;
+		String t = text.trim();
+		int at = t.indexOf('@');
+		if (at >= 0) t = t.substring(0, at);
+		boolean prefixed = t.regionMatches(true, 0, "sb:", 0, 3);
+		if (prefixed) t = t.substring(3).toUpperCase(Locale.ROOT);
+		// Without "sb:", only ALL_CAPS text counts, so a mistyped item id isn't taken for one
+		if (!t.matches("[A-Z0-9_;:\\-]*[A-Z][A-Z0-9_;:\\-]*")) return null;
+		if (!prefixed && t.indexOf(':') >= 0) return null;
+		return t;
+	}
+
+	/** "DARK_CLAYMORE" as "Dark Claymore". */
+	public static String prettyName(String id) {
+		StringBuilder name = new StringBuilder();
+
+		for (String word : id.toLowerCase(Locale.ROOT).split("[_;:]+")) {
+			if (word.isEmpty()) continue;
+			if (!name.isEmpty()) name.append(' ');
+			name.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+		}
+
+		return name.toString();
+	}
+
+	/** Items grabbed with the Grab key, newest first, saved with all their data. */
+	public List<ItemStack> picks(HolderLookup.Provider registries) {
+		List<ItemStack> stacks = new ArrayList<>();
+
+		for (JsonElement json : this.picks) {
+			ItemStack stack = decodeStack(json, registries);
+			if (!stack.isEmpty()) stacks.add(stack);
+		}
+
+		return stacks;
+	}
+
+	/** Saves a grabbed item to the front of the list (moving it there if it was already grabbed). */
+	public void addPick(ItemStack stack, HolderLookup.Provider registries) {
+		if (stack.isEmpty()) return;
+		ItemStack single = stack.copyWithCount(1);
+		List<ItemStack> old = this.picks(registries);
+		old.removeIf(other -> ItemStack.isSameItemSameComponents(other, single));
+		old.addFirst(single);
+		while (old.size() > MAX_PICKS) old.removeLast();
+		this.picks.clear();
+
+		for (ItemStack pick : old) {
+			JsonElement json = encodeStack(pick, registries);
+			if (json != null) this.picks.add(json);
+		}
+	}
+
+	public void removePick(ItemStack stack, HolderLookup.Provider registries) {
+		List<ItemStack> old = this.picks(registries);
+		old.removeIf(other -> ItemStack.isSameItemSameComponents(other, stack));
+		this.picks.clear();
+
+		for (ItemStack pick : old) {
+			JsonElement json = encodeStack(pick, registries);
+			if (json != null) this.picks.add(json);
+		}
 	}
 }

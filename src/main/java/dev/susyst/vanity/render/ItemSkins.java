@@ -97,10 +97,12 @@ public final class ItemSkins {
 		}
 	}
 
-	/** True if this exact stack is in your own inventory (hotbar, main, armor or off hand). */
+	/** True if this exact stack is in your own inventory (hotbar, main, armor or off hand) or on your cursor. */
 	public static boolean isOwn(ItemStack stack) {
 		LocalPlayer player = Minecraft.getInstance().player;
 		if (player == null || stack.isEmpty()) return false;
+		// The item you picked up in an inventory and are moving around
+		if (player.containerMenu.getCarried() == stack) return true;
 		Inventory inventory = player.getInventory();
 
 		for (int slot = 0; slot < inventory.getContainerSize(); slot++) {

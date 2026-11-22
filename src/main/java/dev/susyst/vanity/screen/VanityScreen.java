@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
+
+import com.mojang.blaze3d.platform.InputConstants;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -108,6 +110,14 @@ public final class VanityScreen extends Screen {
 	private float previewYaw;
 	private Menu menu;
 	private int menuScroll;
+	// Item picker (Pick buttons): grabbed items and your own items, drawn over the wardrobe
+	private static final int CELL = 18;
+	private Consumer<ItemStack> pickerAction;
+	private String pickerTitle = "";
+	private List<ItemStack> pickerGrabbed = List.of();
+	private List<ItemStack> pickerOwn = List.of();
+	private int pickerScroll;
+
 	/** The page to go back to when leaving the Hand tab. */
 	private Page lastPage = Page.LOOK;
 	private int skinIndex;
@@ -525,7 +535,7 @@ public final class VanityScreen extends Screen {
 		int boxW = this.panelW - 3 * (smallW + GAP);
 		this.itemBox = this.on(Page.LOOK, new GlassEditBox(this.font, this.panelX, r1, boxW, ROW, Component.literal("Item ID")));
 		this.itemBox.setMaxLength(128);
-		this.itemBox.setHint(Component.literal("netherite_chestplate"));
+		this.itemBox.setHint(Component.literal("netherite_chestplate or sb:ID"));
 		this.itemBox.setResponder(value -> {
 			if (this.syncing) return;
 			this.current().setLook(value.trim());
@@ -535,8 +545,11 @@ public final class VanityScreen extends Screen {
 
 		GlassButton held = this.button(Page.LOOK, this.panelX + boxW + GAP, r1, smallW, "Held", this::useHeldItem);
 		held.setTooltip(tip("Use the exact item in your main hand, including its name, dye, head skin and SkyBlock data"));
-		GlassButton worn = this.button(Page.LOOK, this.panelX + boxW + GAP + (smallW + GAP), r1, smallW, "Worn", this::useWornItem);
-		worn.setTooltip(tip("Save the look of what you're wearing in this slot now (e.g. a SkyBlock piece), then wear anything else"));
+		GlassButton worn = this.button(Page.LOOK, this.panelX + boxW + GAP + (smallW + GAP), r1, smallW, "Pick", () -> this.openPicker("Pick a look for " + this.selected.label, stack -> {
+			this.current().setLook(stack, this.minecraft.player.registryAccess());
+			this.syncItemBox();
+		}));
+		worn.setTooltip(tip("Pick the look from your items (what you wear is first) or items you grabbed with " + VanityClient.grabKeyName() + ". Keeps SkyBlock data and textures."));
 		GlassButton clear = this.button(Page.LOOK, this.panelX + boxW + GAP + 2 * (smallW + GAP), r1, smallW, "Clear", () -> {
 			this.current().clearLook();
 			this.syncItemBox();
@@ -741,8 +754,8 @@ public final class VanityScreen extends Screen {
 		this.dropdown(Page.HAND, this.panelX, r0, this.panelW, "Skin", "None yet", this::skinOptions, () -> config().itemSkins.isEmpty() ? 0 : this.skinIndex,
 				index -> this.skinIndex = index).setTooltip(tip("Your item skins: pick one to edit it"));
 
-		GlassButton newSkin = this.button(Page.HAND, this.panelX, r1, halfW, "New from held", this::newSkinFromHeld);
-		newSkin.setTooltip(tip("Make a skin for the item in your main hand. SkyBlock items match by their SkyBlock id, others by item type."));
+		GlassButton newSkin = this.button(Page.HAND, this.panelX, r1, halfW, "New skin...", () -> this.openPicker("Pick the item to give a skin", this::newSkinFor));
+		newSkin.setTooltip(tip("Pick one of your items (what you hold is first) to give it a skin. SkyBlock items match by their SkyBlock id, others by item type."));
 		GlassButton deleteSkin = this.button(Page.HAND, this.panelX + halfW + GAP, r1, halfW, "Delete", () -> {
 			if (this.skin() != null) config().itemSkins.remove(this.skinIndex);
 		});
@@ -750,7 +763,7 @@ public final class VanityScreen extends Screen {
 
 		this.skinLookBox = this.on(Page.HAND, new GlassEditBox(this.font, this.panelX, r2, boxW, ROW, Component.literal("Look item ID")));
 		this.skinLookBox.setMaxLength(128);
-		this.skinLookBox.setHint(Component.literal("netherite_sword"));
+		this.skinLookBox.setHint(Component.literal("netherite_sword or sb:ID"));
 		this.skinLookBox.setResponder(value -> {
 			if (this.syncing || this.skin() == null) return;
 			this.skin().setLook(value.trim());
@@ -767,8 +780,11 @@ public final class VanityScreen extends Screen {
 
 		GlassButton skinHeld = this.button(Page.HAND, this.panelX + boxW + GAP, r2, smallW, "Held", () -> this.setSkinLook(InteractionHand.MAIN_HAND));
 		skinHeld.setTooltip(tip("Use the exact item in your main hand as the look (keeps its name, skin and SkyBlock data)"));
-		GlassButton skinOff = this.button(Page.HAND, this.panelX + boxW + GAP + (smallW + GAP), r2, smallW, "Off", () -> this.setSkinLook(InteractionHand.OFF_HAND));
-		skinOff.setTooltip(tip("Use the exact item in your off hand as the look"));
+		GlassButton skinOff = this.button(Page.HAND, this.panelX + boxW + GAP + (smallW + GAP), r2, smallW, "Pick", () -> {
+			ItemSkin skin = this.skin();
+			if (skin != null) this.openPicker("Pick a look for " + skin.name, stack -> skin.setLook(stack, this.minecraft.player.registryAccess()));
+		});
+		skinOff.setTooltip(tip("Pick the look from your items or items you grabbed with " + VanityClient.grabKeyName() + ". Keeps SkyBlock data and textures."));
 		GlassButton skinClear = this.button(Page.HAND, this.panelX + boxW + GAP + 2 * (smallW + GAP), r2, smallW, "Clear", () -> {
 			if (this.skin() != null) this.skin().setLook("");
 		});
@@ -827,10 +843,9 @@ public final class VanityScreen extends Screen {
 		if (this.page == Page.HAND) this.page = this.lastPage;
 	}
 
-	private void newSkinFromHeld() {
-		LocalPlayer player = this.minecraft.player;
-		if (player == null || player.getMainHandItem().isEmpty()) return;
-		ItemSkin created = ItemSkins.create(player.getMainHandItem());
+	private void newSkinFor(ItemStack target) {
+		if (target.isEmpty()) return;
+		ItemSkin created = ItemSkins.create(target);
 
 		// Already have a skin for this item: edit that one
 		for (int i = 0; i < config().itemSkins.size(); i++) {
@@ -856,13 +871,6 @@ public final class VanityScreen extends Screen {
 		LocalPlayer player = this.minecraft.player;
 		if (player == null) return;
 		this.current().setLook(player.getMainHandItem(), player.registryAccess());
-		this.syncItemBox();
-	}
-
-	private void useWornItem() {
-		LocalPlayer player = this.minecraft.player;
-		if (player == null) return;
-		this.current().setLook(player.getItemBySlot(this.selected.equipmentSlot), player.registryAccess());
 		this.syncItemBox();
 	}
 
@@ -907,7 +915,224 @@ public final class VanityScreen extends Screen {
 		this.syncing = false;
 	}
 
+	// ---- item picker ----
+
+	private void openPicker(String title, Consumer<ItemStack> onPick) {
+		LocalPlayer player = this.minecraft.player;
+		if (player == null) return;
+		this.menu = null;
+		this.pickerTitle = title;
+		this.pickerAction = onPick;
+		this.pickerScroll = 0;
+		this.pickerGrabbed = config().picks(player.registryAccess());
+
+		// What you hold, then what you wear, off hand, hotbar and the rest of your inventory (copies, so they're drawn as they really are)
+		List<ItemStack> own = new ArrayList<>();
+		java.util.function.Consumer<ItemStack> add = stack -> {
+			if (stack.isEmpty()) return;
+			for (ItemStack other : own) if (ItemStack.isSameItemSameComponents(other, stack)) return;
+			own.add(stack.copyWithCount(1));
+		};
+		add.accept(player.getMainHandItem());
+		for (CosmeticSlot slot : CosmeticSlot.values()) add.accept(player.getItemBySlot(slot.equipmentSlot));
+		add.accept(player.getOffhandItem());
+		for (int i = 0; i < player.getInventory().getContainerSize(); i++) add.accept(player.getInventory().getItem(i));
+		this.pickerOwn = own;
+	}
+
+	private void closePicker() {
+		this.pickerAction = null;
+	}
+
+	private boolean pickerOpen() {
+		return this.pickerAction != null;
+	}
+
+	private int pickerX0() {
+		return this.panelX - 4;
+	}
+
+	private int pickerX1() {
+		return this.panelX + this.panelW + 4;
+	}
+
+	private int pickerY0() {
+		return 28;
+	}
+
+	private int pickerY1() {
+		return this.height - 38;
+	}
+
+	private int pickerColumns() {
+		return Math.max(4, (this.pickerX1() - this.pickerX0() - 12) / CELL);
+	}
+
+	/** Rows of the picker: a label (null cells) or a row of cells; grabbed cells come first. */
+	private record PickerRow(String label, List<ItemStack> cells, boolean grabbed) {
+	}
+
+	private List<PickerRow> pickerRows() {
+		List<PickerRow> rows = new ArrayList<>();
+		int cols = this.pickerColumns();
+		rows.add(new PickerRow("Grabbed (" + VanityClient.grabKeyName() + " over any item; right-click removes)", null, true));
+		if (this.pickerGrabbed.isEmpty()) rows.add(new PickerRow("Nothing yet: open a chest, menu or the Auction House, hover an item, press " + VanityClient.grabKeyName(), null, true));
+		for (int i = 0; i < this.pickerGrabbed.size(); i += cols) rows.add(new PickerRow(null, this.pickerGrabbed.subList(i, Math.min(i + cols, this.pickerGrabbed.size())), true));
+		rows.add(new PickerRow("Your items", null, false));
+		for (int i = 0; i < this.pickerOwn.size(); i += cols) rows.add(new PickerRow(null, this.pickerOwn.subList(i, Math.min(i + cols, this.pickerOwn.size())), false));
+		return rows;
+	}
+
+	private static int rowHeight(PickerRow row) {
+		return row.cells() == null ? 12 : CELL;
+	}
+
+	/** The picker cell under the mouse: {grabbed? 1 : 0, index in its list}, or null. */
+	private int[] pickerCellAt(double mouseX, double mouseY) {
+		int x = this.pickerX0() + 6;
+		int y = this.pickerY0() + 20;
+		int bottom = this.pickerY1() - 4;
+		List<PickerRow> rows = this.pickerRows();
+		int cols = this.pickerColumns();
+		int grabbedRow = 0;
+		int ownRow = 0;
+
+		for (int r = 0; r < rows.size(); r++) {
+			PickerRow row = rows.get(r);
+			if (row.cells() == null) {
+				if (r >= this.pickerScroll) y += rowHeight(row);
+				continue;
+			}
+
+			int rowIndex = row.grabbed() ? grabbedRow++ : ownRow++;
+			if (r < this.pickerScroll) continue;
+			if (y + CELL > bottom) break;
+
+			if (mouseY >= y && mouseY < y + CELL && mouseX >= x) {
+				int col = (int) ((mouseX - x) / CELL);
+				if (col < row.cells().size()) return new int[] {row.grabbed() ? 1 : 0, rowIndex * cols + col};
+			}
+
+			y += CELL;
+		}
+
+		return null;
+	}
+
+	private ItemStack pickerStack(int[] cell) {
+		List<ItemStack> list = cell[0] == 1 ? this.pickerGrabbed : this.pickerOwn;
+		return cell[1] < list.size() ? list.get(cell[1]) : ItemStack.EMPTY;
+	}
+
+	private void extractPicker(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+		g.nextStratum();
+		g.fill(0, 0, this.width, this.height, 0x66000000);
+		int x0 = this.pickerX0();
+		int y0 = this.pickerY0();
+		int x1 = this.pickerX1();
+		int y1 = this.pickerY1();
+		Glass.fill(g, x0, y0, x1 - x0, y1 - y0, 0xF4121720);
+		Glass.border(g, x0, y0, x1 - x0, y1 - y0, Glass.alpha(Glass.ACCENT, 0x90));
+		g.text(this.font, Component.literal(this.pickerTitle).withStyle(ChatFormatting.BOLD), x0 + 6, y0 + 6, Glass.TEXT, false);
+		boolean overClose = mouseX >= x1 - 16 && mouseX < x1 - 2 && mouseY >= y0 + 2 && mouseY < y0 + 16;
+		g.text(this.font, Component.literal("✕"), x1 - 12, y0 + 6, overClose ? Glass.ACCENT : Glass.TEXT_DIM, false);
+
+		int x = x0 + 6;
+		int y = y0 + 20;
+		int bottom = y1 - 4;
+		List<PickerRow> rows = this.pickerRows();
+		int[] hovered = this.pickerCellAt(mouseX, mouseY);
+		int grabbedRow = 0;
+		int ownRow = 0;
+		int cols = this.pickerColumns();
+		boolean more = false;
+
+		for (int r = 0; r < rows.size(); r++) {
+			PickerRow row = rows.get(r);
+			int rowIndex = row.cells() == null ? -1 : row.grabbed() ? grabbedRow++ : ownRow++;
+			if (r < this.pickerScroll) continue;
+
+			if (y + rowHeight(row) > bottom) {
+				more = true;
+				break;
+			}
+
+			if (row.cells() == null) {
+				g.text(this.font, Component.literal(this.font.plainSubstrByWidth(row.label(), x1 - x - 6)), x, y + 2, row.label().startsWith("Nothing") ? GRAY : Glass.TEXT_DIM, false);
+				y += 12;
+				continue;
+			}
+
+			for (int c = 0; c < row.cells().size(); c++) {
+				int cx = x + c * CELL;
+				boolean isHovered = hovered != null && hovered[0] == (row.grabbed() ? 1 : 0) && hovered[1] == rowIndex * cols + c;
+				g.fill(cx, y, cx + CELL - 1, y + CELL - 1, isHovered ? Glass.alpha(Glass.ACCENT, 0x55) : 0x1EFFFFFF);
+				g.item(row.cells().get(c), cx + 1, y + 1);
+			}
+
+			y += CELL;
+		}
+
+		if (more || this.pickerScroll > 0) g.text(this.font, Component.literal(more ? "scroll for more ▾" : "▴"), x1 - 70, y1 - 12, GRAY, false);
+		if (hovered != null) g.setTooltipForNextFrame(this.font, this.pickerStack(hovered), mouseX, mouseY);
+	}
+
+	private boolean pickerClicked(MouseButtonEvent event) {
+		double mx = event.x();
+		double my = event.y();
+		boolean inside = mx >= this.pickerX0() && mx < this.pickerX1() && my >= this.pickerY0() && my < this.pickerY1();
+		boolean onClose = mx >= this.pickerX1() - 16 && mx < this.pickerX1() - 2 && my >= this.pickerY0() + 2 && my < this.pickerY0() + 16;
+
+		if (!inside || onClose) {
+			this.closePicker();
+			return true;
+		}
+
+		int[] cell = this.pickerCellAt(mx, my);
+		if (cell == null) return true;
+		ItemStack stack = this.pickerStack(cell);
+
+		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT && cell[0] == 1) {
+			config().removePick(stack, this.minecraft.player.registryAccess());
+			this.pickerGrabbed = config().picks(this.minecraft.player.registryAccess());
+			return true;
+		}
+
+		Consumer<ItemStack> action = this.pickerAction;
+		this.closePicker();
+		action.accept(stack.copy());
+		this.changed();
+		this.refresh();
+		return true;
+	}
+
 	// ---- test hooks (GUI-scaled coordinates) ----
+
+	public boolean pickerShown() {
+		return this.pickerOpen();
+	}
+
+	/** Centre of the first picker cell whose item id or SkyBlock id is {@code id}, or null. */
+	public double[] pickerCellCenter(String id) {
+		if (!this.pickerOpen()) return null;
+
+		for (int scroll = 0; scroll < this.pickerRows().size(); scroll++) {
+			this.pickerScroll = scroll;
+
+			for (int y = this.pickerY0() + 20; y < this.pickerY1(); y += 2) {
+				for (int x = this.pickerX0() + 6 + CELL / 2; x < this.pickerX1(); x += CELL) {
+					int[] cell = this.pickerCellAt(x, y + CELL / 2.0);
+					if (cell == null) continue;
+					ItemStack stack = this.pickerStack(cell);
+					String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+					if (id.equals(itemId) || id.equals(ItemSkins.skyblockId(stack))) return new double[] {x, y + CELL / 2.0};
+				}
+			}
+		}
+
+		this.pickerScroll = 0;
+		return null;
+	}
 
 	/** Centre of the visible widget whose label starts with {@code prefix}, or null. */
 	public double[] widgetCenter(String prefix) {
@@ -1025,6 +1250,8 @@ public final class VanityScreen extends Screen {
 
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+		if (this.pickerOpen()) return this.pickerClicked(event);
+
 		if (this.menu != null) {
 			int index = this.menuIndexAt(event.x(), event.y());
 			Menu m = this.menu;
@@ -1043,6 +1270,11 @@ public final class VanityScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		if (this.pickerOpen()) {
+			this.pickerScroll = Math.max(0, Math.min(this.pickerRows().size() - 1, this.pickerScroll - (int) Math.signum(scrollY)));
+			return true;
+		}
+
 		if (this.menu != null) {
 			this.menuScroll = this.clampScroll(this.menuScroll - (int) Math.signum(scrollY));
 			return true;
@@ -1053,6 +1285,11 @@ public final class VanityScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+		if (this.pickerOpen()) {
+			if (event.isEscape()) this.closePicker();
+			return true;
+		}
+
 		if (this.menu != null && event.isEscape()) {
 			this.menu = null;
 			return true;
@@ -1085,11 +1322,14 @@ public final class VanityScreen extends Screen {
 		graphics.fill(this.panelX, this.contentY - 6, this.panelX + this.panelW, this.contentY - 5, Glass.CONTROL_BORDER);
 
 		// While a menu is open, widgets under it shouldn't light up
-		boolean overMenu = this.inMenu(mouseX, mouseY);
+		boolean overMenu = this.inMenu(mouseX, mouseY) || this.pickerOpen();
 		super.extractRenderState(graphics, overMenu ? -1 : mouseX, overMenu ? -1 : mouseY, a);
 
 		switch (this.page) {
-			case LOOK -> this.lookStatus(graphics, this.current());
+			case LOOK -> {
+				this.lookStatus(graphics, this.current());
+				if (!this.all) this.hint(graphics, "Type an item id or a SkyBlock id (sb:HYPERION), or Pick. In any inventory, press " + VanityClient.grabKeyName() + " over an item to grab it.");
+			}
 			case STYLE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Dye works on leather looks. Also styles your real armor.");
 			case TRIM -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Also on inventory icons. Texture packs apply.");
 			case DESIGN -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Up to 3 patterns in any color, over your armor.");
@@ -1106,6 +1346,7 @@ public final class VanityScreen extends Screen {
 		}
 
 		if (this.menu != null) this.extractMenu(graphics, mouseX, mouseY);
+		if (this.pickerOpen()) this.extractPicker(graphics, mouseX, mouseY);
 	}
 
 	/** Gray help text under the page, wrapped to the panel width. */
@@ -1158,8 +1399,11 @@ public final class VanityScreen extends Screen {
 			text = Component.literal("Showing your real armor.");
 			color = GRAY;
 		} else if (stack.isEmpty()) {
-			text = Component.literal("Unknown item id");
+			text = Component.literal("Unknown item id (SkyBlock ids: sb:ID)");
 			color = RED;
+		} else if (s.itemStack == null && VanityConfig.resolveItem(s.item).isEmpty() && VanityConfig.skyblockIdOf(s.item) != null) {
+			text = Component.literal("SkyBlock " + VanityConfig.skyblockIdOf(s.item) + ": your pack's texture for it");
+			color = GREEN;
 		} else if (VanityCosmetics.usesVanillaLook(this.selected, stack)) {
 			text = Component.literal("Looks like ").append(stack.getHoverName());
 			color = GREEN;

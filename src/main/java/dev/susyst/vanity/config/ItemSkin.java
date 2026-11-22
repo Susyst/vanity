@@ -35,7 +35,8 @@ public final class ItemSkin {
 		if (!Objects.equals(this.resolvedItem, this.lookItem) || this.resolvedJson != this.lookStack || this.resolvedRegistries != registries) {
 			ItemStack stack = ItemStack.EMPTY;
 			if (registries != null) stack = VanityConfig.decodeStack(this.lookStack, registries);
-			if (stack.isEmpty()) stack = VanityConfig.resolveItem(this.lookItem);
+			// A typed SkyBlock id is made on the item type you hold, like the real one
+			if (stack.isEmpty()) stack = VanityConfig.resolveLook(this.lookItem, VanityConfig.resolveItem(this.item).getItem());
 			this.resolvedStack = stack;
 			this.resolvedItem = this.lookItem;
 			this.resolvedJson = this.lookStack;

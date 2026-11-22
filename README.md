@@ -8,7 +8,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.12.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.13.0.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. On the **Look** page, open **All slots look like** to change all four slots at once: Leather, Chainmail, Iron,
    Gold, Copper, Diamond or Netherite (**Real armor** turns it off).
@@ -35,8 +35,8 @@ once), then a page. Every choice with more than two options is a dropdown.
   wear it, rename it, **Update** it with your current look or **Delete** it. Press **N** in game for the next outfit
   (rebindable; there's also an unbound Previous outfit key). Up to 12 outfits. **Auto-wear** puts the picked outfit on
   every time you join the server (or singleplayer world) you're in now.
-- **Hand** tab, item skins: hold an item and press **New from held**, then type a look id (`netherite_sword`) or hold
-  the look item and press **Held** (or **Off** for your off hand). The item you hold is drawn as the look in first and
+- **Hand** tab, item skins: press **New skin...** and pick the item to skin, then type a look id (`netherite_sword`),
+  press **Held** for what's in your hand, or **Pick** one. The item you hold is drawn as the look in first and
   third person, in your hotbar and inventory, with texture packs. SkyBlock items match by their SkyBlock id, so only
   that item gets the skin; other items match by type. The real item still works the same.
 
@@ -63,6 +63,15 @@ bounding box (`ItemStackRenderState#getModelBoundingBox`) and scales/centers it 
 ## Download
 
 Get the jar from [Releases](https://github.com/Susyst/vanity/releases).
+
+## SkyBlock and custom textures
+
+- **Grab key (K)**: in any inventory, chest, menu or the Auction House, hover an item and press **K**. It's saved with
+  all its data, so its texture pack look comes along. **Pick** (Look page and Hand tab) shows your grabbed items and
+  your own items with their real textures; click one to use it. Right-click a grabbed item to remove it.
+- **SkyBlock ids**: type `sb:HYPERION` (or just `HYPERION`) as a look, even for items you don't own. It makes an item
+  carrying that SkyBlock id and name, so texture packs and mods that texture SkyBlock items by id show their texture.
+  Armor ids are made on leather pieces and held-item ids on the item you hold; add `@stone_sword` to pick the item.
 
 ## Build and test
 

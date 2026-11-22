@@ -3,6 +3,7 @@ package dev.susyst.vanity.test;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -11,6 +12,8 @@ import java.util.concurrent.CompletableFuture;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import net.minecraft.client.CameraType;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -163,6 +166,7 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			testReactiveRunes(context, singleplayer);
 			testAnimatedDesignAndGlow(context, singleplayer);
 			testItemSkins(context, singleplayer);
+			testGrabPickAndSkyblockIds(context, singleplayer);
 			testAutoOutfit(context);
 		}
 	}
@@ -815,9 +819,13 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		// Hand tab: New from held, then the off-hand netherite sword as the look
 		context.setScreen(VanityScreen::hand);
 		context.waitTicks(5);
-		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("New from held"));
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("New skin"));
 		context.waitTicks(2);
-		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Off"));
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).pickerCellCenter("minecraft:diamond_sword"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Pick"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).pickerCellCenter("minecraft:netherite_sword"));
 		context.waitTicks(3);
 		context.takeScreenshot("32a_wardrobe_hand_skins");
 		context.setScreen(() -> null);
@@ -847,7 +855,9 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		context.runOnClient(VanityClientGameTest::showHud);
 		context.setScreen(VanityScreen::hand);
 		context.waitTicks(5);
-		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("New from held"));
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("New skin"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).pickerCellCenter("HYPERION"));
 		context.waitTicks(2);
 		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Look item ID"));
 		context.getInput().typeChars("golden_sword");
@@ -866,6 +876,106 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		});
 		context.takeScreenshot("32e_skyblock_item_skin");
 		cleanView(context);
+	}
+
+	/**
+	 * Easier SkyBlock looks: grab an item from an inventory with the Grab key, use it from the picker, carry a skinned
+	 * item on the cursor without it going back to its real texture, and type SkyBlock ids as looks.
+	 */
+	private static void testGrabPickAndSkyblockIds(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		singleplayer.getServer().runCommand("item replace entity @p inventory.0 with minecraft:stone_sword[minecraft:custom_data={id:\"DARK_CLAYMORE\"},minecraft:custom_name=\"Dark Claymore\"]");
+		context.waitTicks(5);
+		context.runOnClient(client -> {
+			VanityClient.config().picks.clear();
+			showHud(client);
+		});
+
+		// Hover the Dark Claymore in the inventory and press the Grab key
+		context.setScreen(() -> new InventoryScreen(Minecraft.getInstance().player));
+		context.waitTicks(5);
+		context.getInput().setCursorPos(slotCenter(context, 9)[0], slotCenter(context, 9)[1]);
+		context.waitTicks(2);
+		context.getInput().pressKey(VanityClient.grabKey());
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			List<ItemStack> picks = VanityClient.config().picks(client.player.registryAccess());
+			check(picks.size() == 1 && ItemSkins.skyblockId(picks.get(0)).equals("DARK_CLAYMORE"), "The Grab key should save the hovered Dark Claymore, got " + picks);
+		});
+		context.takeScreenshot("34a_grabbed_with_key");
+
+		// Pick up the skinned Hyperion: on the cursor it must keep its skin
+		int hotbar = context.computeOnClient(client -> 36 + client.player.getInventory().getSelectedSlot());
+		double[] hyperion = slotCenter(context, hotbar);
+		context.getInput().setCursorPos(hyperion[0], hyperion[1]);
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTicks(3);
+		context.getInput().setCursorPos(hyperion[0] + 60, hyperion[1] - 90);
+		context.waitTicks(3);
+		context.runOnClient(client -> {
+			ItemStack carried = client.player.containerMenu.getCarried();
+			check(ItemSkins.skyblockId(carried).equals("HYPERION"), "The Hyperion should be on the cursor, got " + carried);
+			check(VanityCosmetics.inventoryIcon(carried).is(Items.GOLDEN_SWORD), "The item on the cursor should keep its skin");
+		});
+		context.takeScreenshot("34b_carried_item_keeps_skin");
+		context.getInput().setCursorPos(hyperion[0], hyperion[1]);
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTicks(3);
+		context.runOnClient(client -> check(client.player.containerMenu.getCarried().isEmpty(), "The Hyperion should be put back"));
+		context.setScreen(() -> null);
+
+		// Use the grabbed Dark Claymore as the Hyperion's look, from the picker
+		context.setScreen(VanityScreen::hand);
+		context.waitTicks(5);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Skin:"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).menuRowCenter("Hyperion → Golden Sword"));
+		context.waitTicks(2);
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).widgetCenter("Pick"));
+		context.waitTicks(3);
+		context.runOnClient(client -> check(((VanityScreen) client.gui.screen()).pickerShown(), "Pick should open the item picker"));
+		context.getInput().setCursorPos(1, 1);
+		context.waitTicks(2);
+		context.takeScreenshot("34c_item_picker");
+		clickAt(context, client -> ((VanityScreen) client.gui.screen()).pickerCellCenter("DARK_CLAYMORE"));
+		context.waitTicks(3);
+		context.takeScreenshot("34d_hand_tab_dark_claymore_look");
+		context.setScreen(() -> null);
+		context.runOnClient(client -> {
+			ItemStack drawn = ItemSkins.skinned(client.player.getMainHandItem());
+			check(ItemSkins.skyblockId(drawn).equals("DARK_CLAYMORE") && drawn.is(Items.STONE_SWORD), "The Hyperion should be drawn as the grabbed Dark Claymore, got " + drawn);
+		});
+
+		// Typed SkyBlock ids: work without owning the item, so packs that texture by id show it
+		context.runOnClient(client -> {
+			check("HYPERION".equals(VanityConfig.skyblockIdOf("sb:hyperion")), "sb:hyperion is a SkyBlock id");
+			check("DARK_CLAYMORE".equals(VanityConfig.skyblockIdOf("DARK_CLAYMORE@stone_sword")), "ALL_CAPS text is a SkyBlock id");
+			check(VanityConfig.skyblockIdOf("diamond_sword") == null && VanityConfig.skyblockIdOf("minecraft:DIAMOND") == null, "Item ids aren't SkyBlock ids");
+			ItemStack claymore = VanityConfig.resolveLook("DARK_CLAYMORE@stone_sword", Items.IRON_SWORD);
+			check(claymore.is(Items.STONE_SWORD) && claymore.getHoverName().getString().equals("Dark Claymore"), "SkyBlock look should be a named stone sword, got " + claymore);
+
+			VanityConfig config = VanityClient.config();
+			config.chest.setLook("sb:SUPERIOR_DRAGON_CHESTPLATE");
+			ItemStack chest = config.get(CosmeticSlot.CHEST).stack();
+			check(chest.is(Items.LEATHER_CHESTPLATE) && ItemSkins.skyblockId(chest).equals("SUPERIOR_DRAGON_CHESTPLATE"), "Typed SkyBlock chestplate should be a leather chestplate with its id, got " + chest);
+			check(drawnArmor(client, EquipmentSlot.CHEST).is(Items.LEATHER_CHESTPLATE), "It should be worn as the look");
+		});
+		context.setScreen(() -> new VanityScreen(CosmeticSlot.CHEST, VanityScreen.Page.LOOK));
+		context.waitTicks(10);
+		context.takeScreenshot("34e_wardrobe_skyblock_id_look");
+		context.setScreen(() -> null);
+		cleanView(context);
+	}
+
+	/** Screen position (window pixels) of a slot in the open inventory screen. */
+	private static double[] slotCenter(ClientGameTestContext context, int menuSlot) {
+		return context.computeOnClient(client -> {
+			InventoryScreen screen = (InventoryScreen) client.gui.screen();
+			Slot slot = screen.getMenu().getSlot(menuSlot);
+			double scale = client.getWindow().getGuiScale();
+			int left = (screen.width - 176) / 2;
+			int top = (screen.height - 166) / 2;
+			return new double[] {(left + slot.x + 8) * scale, (top + slot.y + 8) * scale};
+		});
 	}
 
 	/** Auto-wear an outfit in this world: switching away and "joining" again puts it back on. */

@@ -6,6 +6,10 @@ import org.lwjgl.sdl.SDLScancode;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.player.PlayerModel;
@@ -19,6 +23,8 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.LivingEntityRenderLayerRegistrationCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
@@ -27,6 +33,7 @@ import dev.susyst.vanity.config.CosmeticSlot;
 import dev.susyst.vanity.config.ItemSkin;
 import dev.susyst.vanity.config.Outfit;
 import dev.susyst.vanity.config.VanityConfig;
+import dev.susyst.vanity.mixin.AbstractContainerScreenAccessor;
 import dev.susyst.vanity.render.ItemSkins;
 import dev.susyst.vanity.render.RuneParticles;
 import dev.susyst.vanity.render.VanityCosmetics;
@@ -43,6 +50,7 @@ public final class VanityClient implements ClientModInitializer {
 	private static KeyMapping openKey;
 	private static KeyMapping nextOutfitKey;
 	private static KeyMapping previousOutfitKey;
+	private static KeyMapping grabKey;
 
 	/** Slim (Alex) player models have 3-pixel-wide arms. */
 	private static boolean isSlim(PlayerModel model) {
@@ -58,6 +66,25 @@ public final class VanityClient implements ClientModInitializer {
 	public static KeyMapping nextOutfitKey() {
 		return nextOutfitKey;
 	}
+
+	public static KeyMapping grabKey() {
+		return grabKey;
+	}
+
+	public static String grabKeyName() {
+		return grabKey == null ? "K" : grabKey.getTranslatedKeyMessage().getString();
+	}
+
+	/** Saves an item (with all its data) to the grabbed list, for the wardrobe's Pick button. */
+	public static void grab(Minecraft client, ItemStack stack) {
+		if (client.player == null || stack.isEmpty()) return;
+		config.addPick(stack, client.player.registryAccess());
+		config.save();
+		SystemToast.addOrUpdate(client.gui.toastManager(), GRAB_TOAST, Component.literal("Grabbed for Vanity"),
+				Component.literal("").append(stack.getHoverName()).append(Component.literal(", use it with Pick in the wardrobe")));
+	}
+
+	private static final SystemToast.SystemToastId GRAB_TOAST = new SystemToast.SystemToastId(2500L);
 
 	/** The key bound to Next outfit, as shown in Controls. */
 	public static String nextOutfitKeyName() {
@@ -88,6 +115,7 @@ public final class VanityClient implements ClientModInitializer {
 
 		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.open", InputConstants.Type.KEYBOARD, SDLScancode.SDL_SCANCODE_V, CATEGORY));
 		nextOutfitKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.next_outfit", InputConstants.Type.KEYBOARD, SDLScancode.SDL_SCANCODE_N, CATEGORY));
+		grabKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.grab", InputConstants.Type.KEYBOARD, SDLScancode.SDL_SCANCODE_K, CATEGORY));
 		previousOutfitKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.vanity.previous_outfit", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), CATEGORY));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -116,6 +144,19 @@ public final class VanityClient implements ClientModInitializer {
 			}
 
 			if (line != null) lines.add(Math.min(1, lines.size()), line);
+		});
+
+		// Grab key: hover any item in any inventory, chest, Auction House or menu and press it to save it for looks
+		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+			if (!(screen instanceof AbstractContainerScreen<?>)) return;
+
+			ScreenKeyboardEvents.allowKeyPress(screen).register((current, event) -> {
+				if (!grabKey.matches(event)) return true;
+				Slot slot = ((AbstractContainerScreenAccessor) current).vanity$hoveredSlot();
+				if (slot == null || !slot.hasItem()) return true;
+				grab(client, slot.getItem());
+				return false;
+			});
 		});
 
 		// Put on the outfit picked for this server or world
