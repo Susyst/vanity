@@ -8,7 +8,7 @@ Any other item or block can be worn too: it's fitted to the armor shape (glass i
 
 ## Use
 
-1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.13.0.jar` into `mods/`.
+1. Install Fabric Loader 0.20.1+ and Fabric API for 26.3, then drop `vanity-0.13.1.jar` into `mods/`.
 2. In game press **V** (rebindable under Controls → Vanity) to open the wardrobe.
 3. On the **Look** page, open **All slots look like** to change all four slots at once: Leather, Chainmail, Iron,
    Gold, Copper, Diamond or Netherite (**Real armor** turns it off).

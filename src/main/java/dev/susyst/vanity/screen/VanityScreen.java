@@ -1330,7 +1330,7 @@ public final class VanityScreen extends Screen {
 		switch (this.page) {
 			case LOOK -> {
 				this.lookStatus(graphics, this.current());
-				if (!this.all) this.hint(graphics, "Type an item id or a SkyBlock id (sb:HYPERION), or Pick. In any inventory, press " + VanityClient.grabKeyName() + " over an item to grab it.");
+				if (!this.all) this.hint(graphics, "SkyBlock: type sb:ID. Grab any item: " + VanityClient.grabKeyName());
 			}
 			case STYLE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Dye works on leather looks. Also styles your real armor.");
 			case TRIM -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Also on inventory icons. Texture packs apply.");
