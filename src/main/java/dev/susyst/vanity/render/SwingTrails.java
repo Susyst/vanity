@@ -37,7 +37,7 @@ public final class SwingTrails {
 	/** Clicking faster than this many ticks apart doesn't start another trail. */
 	private static final int MIN_GAP = 3;
 
-	private static long lastTrailTick = Long.MIN_VALUE;
+	private static long lastTrailTick = -1000L;
 	private static int frame = -1;
 	private static int combo = 1;
 

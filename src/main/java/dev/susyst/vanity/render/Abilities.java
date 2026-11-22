@@ -48,7 +48,7 @@ public final class Abilities {
 	private static long armedUntil = Long.MIN_VALUE;
 	private static boolean implosion;
 	private static String lastAbility = "";
-	private static long lastAbilityTick = Long.MIN_VALUE;
+	private static long lastAbilityTick = -1000L;
 
 	/** For tests: the last ability seen, and the particles of the last trail and ring. */
 	public static String lastAbilityName = "";
