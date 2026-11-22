@@ -65,9 +65,10 @@ public final class ArmorExtras {
 	/**
 	 * One piece: the body part it rides on, the armor piece it comes with, whether it glows, and how it moves: spin
 	 * (degrees a second), bob (pixels), sway (degrees, for capes and banners) and orbit (radius, radians a second).
+	 * faceOrbit keeps an orbiting piece turned along its path, so a ring of them turns as one.
 	 */
 	public record Piece(Bone bone, CosmeticSlot slot, ModelPart part, boolean glow, float spin, float bob, float sway, float orbitRadius, float orbitSpeed,
-			float phase, float baseX, float baseY, float baseZ, float baseXRot, float baseYRot) {
+			float phase, boolean faceOrbit, float baseX, float baseY, float baseZ, float baseXRot, float baseYRot) {
 	}
 
 	private ArmorExtras() {
@@ -105,7 +106,7 @@ public final class ArmorExtras {
 				JsonArray orbit = p.has("orbit") ? p.getAsJsonArray("orbit") : null;
 				pieces.add(new Piece(bone, slot, part, p.get("glow").getAsBoolean(), number(p, "spin"), number(p, "bob"), number(p, "sway"),
 						orbit != null ? orbit.get(0).getAsFloat() : 0.0F, orbit != null ? orbit.get(1).getAsFloat() : 0.0F, number(p, "phase"),
-						part.x, part.y, part.z, part.xRot, part.yRot));
+						p.has("face_orbit") && p.get("face_orbit").getAsBoolean(), part.x, part.y, part.z, part.xRot, part.yRot));
 			}
 
 			return List.copyOf(pieces);
@@ -147,6 +148,7 @@ public final class ArmorExtras {
 				float angle = seconds * piece.orbitSpeed() + piece.phase();
 				part.x = piece.baseX() + piece.orbitRadius() * Mth.cos(angle);
 				part.z = piece.baseZ() + piece.orbitRadius() * Mth.sin(angle);
+				if (piece.faceOrbit()) part.yRot = piece.baseYRot() - angle - (float) (Math.PI / 2.0);
 			}
 
 			poseStack.pushPose();

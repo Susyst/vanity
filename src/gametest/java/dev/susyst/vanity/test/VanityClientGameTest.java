@@ -1020,19 +1020,16 @@ public class VanityClientGameTest implements FabricClientGameTest {
 			}
 		}
 
-		// A three-quarter view, to see the 3D shapes from the side
+		// A three-quarter view, to see the 3D shapes from the side. The third-person camera follows where the player
+		// looks, so the body is turned instead (within the 50 degrees it may lag behind the view without snapping back)
 		setCamera(context, CameraType.THIRD_PERSON_FRONT);
-		context.runOnClient(client -> {
-			client.player.setYRot(-40.0F);
-			client.player.yBodyRot = -40.0F;
-			client.player.yHeadRot = -40.0F;
-		});
 
 		for (CustomArmors.Armor armor : CustomArmors.BUILT_IN) {
 			context.runOnClient(client -> {
 				for (CosmeticSlot slot : CosmeticSlot.values()) VanityClient.config().get(slot).setLook(armor.lookId());
 			});
 			context.waitTicks(3);
+			context.runOnClient(VanityClientGameTest::turnBody);
 			context.takeScreenshot("35_custom_armor_" + armor.id() + "_angle");
 		}
 
@@ -1265,6 +1262,14 @@ public class VanityClientGameTest implements FabricClientGameTest {
 		client.player.setXRot(0.0F);
 		client.player.yBodyRot = 0.0F;
 		client.player.yHeadRot = 0.0F;
+	}
+
+	/** Turns the player's body 40 degrees away from the camera, head following, for a three-quarter view. */
+	private static void turnBody(Minecraft client) {
+		client.player.setYRot(0.0F);
+		client.player.yRotO = 0.0F;
+		client.player.yBodyRot = client.player.yBodyRotO = 40.0F;
+		client.player.yHeadRot = client.player.yHeadRotO = 40.0F;
 	}
 
 	/** The player's Vanity render data for this frame. */

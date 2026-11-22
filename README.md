@@ -73,7 +73,9 @@ Get the jar from [Releases](https://github.com/Susyst/vanity/releases).
   - Parts of them **glow in the dark** (lava cracks, circuit lines, stars, gems), some with a slow pulse.
   - **HD textures** (4x vanilla detail) and **3D shapes** that change the silhouette: curved horns, crests, plumes,
     layered pauldrons, capes, ice crystals, antlers and leaves, a samurai crest and banner, an antenna and power core,
-    a halo with orbiting orbs and spectral wings. Capes and banners sway. **3D: OFF** on the Look page hides them.
+    a halo with orbiting orbs and spectral wings. Arms, legs and feet are shaped too: ridged breastplates, domed knee
+    guards, armored feet with toes (pointed, broad or clawed), elbow spikes, flame fins, winding vines, roots, a
+    flared samurai neck guard, a circling drone. Capes and banners sway. **3D: OFF** on the Look page hides them.
 - **Your own armor**: **All slots look like → + Your own armor...** opens `config/vanity/armors`. Put `<name>.png`
   there (a 64x32 armor texture, or 128x64 and up) and optionally `<name>_leggings.png` and `<name>_glow.png` (pixels
   that glow in the dark); it shows up as "<Name> (yours)"
