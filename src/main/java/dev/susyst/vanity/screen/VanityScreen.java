@@ -1478,9 +1478,9 @@ public final class VanityScreen extends Screen {
 			case RUNE -> this.hint(graphics, this.all ? "Editing all four pieces at once." : "Particles only you see. Press F5 to look at them.");
 			case OUTFITS -> this.hint(graphics, "Press " + VanityClient.nextOutfitKeyName() + " in game to switch outfits.");
 			case HAND -> this.handStatus(graphics);
-			case EFFECTS -> this.hint(graphics, "Plays when you hit something, and where it dies if you hit it. Only you see it. Color is for Sparks and Firework.");
-			case SWING -> this.hint(graphics, "A trail where your weapon swings, in first and third person. Only you see it. Color is for the Color trail.");
-			case ABILITIES -> this.hint(graphics, "SkyBlock: plays when an ability's mana cost shows above your hotbar. Teleports leave a trail. Only you see it.");
+			case EFFECTS -> this.hint(graphics, "Plays on hits and kills. Only you see it.");
+			case SWING -> this.hint(graphics, "A trail on each weapon swing. Only you see it.");
+			case ABILITIES -> this.hint(graphics, "SkyBlock: reads mana costs above the hotbar.");
 		}
 
 		LocalPlayer player = this.minecraft.player;
