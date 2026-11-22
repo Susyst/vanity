@@ -34,8 +34,10 @@ public final class SwingTrails {
 	/** Half of the arc, in radians (70 degrees each way from straight ahead). */
 	private static final double HALF_ARC = Math.toRadians(70);
 
-	private static boolean wasSwinging;
-	private static int lastSwingTime;
+	/** Clicking faster than this many ticks apart doesn't start another trail. */
+	private static final int MIN_GAP = 3;
+
+	private static long lastTrailTick = Long.MIN_VALUE;
 	private static int frame = -1;
 	private static int combo = 1;
 
@@ -52,26 +54,24 @@ public final class SwingTrails {
 
 		if (player == null || level == null) {
 			frame = -1;
-			wasSwinging = false;
 			return;
 		}
 
-		// A new swing: the arm starts swinging, or starts over in the middle of a swing
-		boolean started = player.swinging && (!wasSwinging || player.swingTime < lastSwingTime);
-		wasSwinging = player.swinging;
-		lastSwingTime = player.swingTime;
-		VanityConfig config = VanityClient.config();
-		SwingTrail trail = config.swing;
-
-		if (started && config.enabled && trail.style != TrailStyle.NONE && player.swingingArm == InteractionHand.MAIN_HAND
-				&& (!trail.weaponsOnly || isWeapon(player.getMainHandItem()))) {
-			start(level, player, trail);
-		}
-
 		if (frame >= 0) {
-			draw(level, player, trail, frame);
+			draw(level, player, VanityClient.config().swing, frame);
 			if (++frame >= FRAMES) frame = -1;
 		}
+	}
+
+	/** Your arm swings (attacking, or clicking at nothing); called from LocalPlayer#swing. */
+	public static void onSwing(LocalPlayer player, InteractionHand hand) {
+		ClientLevel level = Minecraft.getInstance().level;
+		VanityConfig config = VanityClient.config();
+		SwingTrail trail = config.swing;
+		if (level == null || !config.enabled || trail.style == TrailStyle.NONE || hand != InteractionHand.MAIN_HAND) return;
+		if (trail.weaponsOnly && !isWeapon(player.getMainHandItem())) return;
+		if (level.getGameTime() - lastTrailTick < MIN_GAP) return;
+		start(level, player, trail);
 	}
 
 	/** Wardrobe "Try it": one trail now. */
@@ -99,6 +99,7 @@ public final class SwingTrails {
 		if (trail.style == TrailStyle.NONE) return;
 		frame = 0;
 		lastParticles = 0;
+		lastTrailTick = level.getGameTime();
 		trails++;
 		if (trail.shape == SwingShape.COMBO) combo = -combo;
 

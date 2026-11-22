@@ -9,6 +9,7 @@
 		"EquipmentAssetManagerMixin",
 		"FirstPersonHandsAndItemsMixin",
 		"GuiGraphicsExtractorMixin",
+		"LocalPlayerMixin",
 		"RenderTypeAccessor"
 	],
 	"injectors": {
