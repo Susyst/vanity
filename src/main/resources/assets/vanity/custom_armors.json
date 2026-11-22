@@ -21,7 +21,7 @@
     "color": 12603418,
     "glow": true,
     "pulse": true,
-    "parts": 8
+    "parts": 14
   },
   {
     "id": "verdant",
@@ -29,7 +29,7 @@
     "color": 4094522,
     "glow": true,
     "pulse": false,
-    "parts": 9
+    "parts": 13
   },
   {
     "id": "royal_guard",

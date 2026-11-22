@@ -518,8 +518,10 @@ class Ember(Design):
 
     def extras(self):
         return [
-            {"name": "fin", "bone": "head", "box": [-0.5, -3, -4, 1, 3, 8], "pivot": [0, -9, 0], "rot": [0, 0, 0], "paint": "dark"},
-            {"name": "fin_edge", "bone": "head", "box": [-0.5, -1, -3, 1, 1, 6], "pivot": [0, -11.6, 0], "rot": [0, 0, 0], "paint": "glow"},
+            {"name": "flame_front", "bone": "head", "box": [-1, -4, -1, 2, 4, 2], "pivot": [-2.5, -8.5, -2], "rot": [30, 0, 22], "paint": "dark", "mirror": True},
+            {"name": "flame_front_tip", "bone": "head", "box": [-0.5, -2, -0.5, 1, 2, 1], "pivot": [-4.2, -11.3, 0.1], "rot": [30, 0, 22], "paint": "glow", "mirror": True},
+            {"name": "flame_back", "bone": "head", "box": [-1, -3, -1, 2, 3, 2], "pivot": [-2, -8.5, 2], "rot": [50, 0, 18], "paint": "dark", "mirror": True},
+            {"name": "flame_back_tip", "bone": "head", "box": [-0.5, -2, -0.5, 1, 2, 1], "pivot": [-3, -10.4, 4.2], "rot": [50, 0, 18], "paint": "glow", "mirror": True},
             {"name": "spike_a", "bone": "right_arm", "box": [-0.5, -4, -0.5, 1, 4, 1], "pivot": [-3, -3, -1.5], "rot": [0, 0, 25], "paint": "dark", "mirror": True},
             {"name": "spike_b", "bone": "right_arm", "box": [-0.5, -5, -0.5, 1, 5, 1], "pivot": [-2.5, -3, 0.5], "rot": [0, 0, 18], "paint": "dark", "mirror": True},
             {"name": "spike_tip", "bone": "right_arm", "box": [-0.5, -1, -0.5, 1, 1, 1], "pivot": [-4.1, -7.4, 0.5], "rot": [0, 0, 18], "paint": "glow", "mirror": True},
@@ -557,11 +559,13 @@ class Verdant(Design):
 
     def extras(self):
         return [
-            {"name": "leaf_front", "bone": "head", "box": [-2, 0, -3, 4, 0, 3], "pivot": [0, -9, -4], "rot": [-35, 0, 0], "paint": "leaf"},
-            {"name": "leaf_side", "bone": "head", "box": [-3, 0, -2, 3, 0, 4], "pivot": [-4, -9, 0], "rot": [0, 0, 35], "paint": "leaf", "mirror": True},
-            {"name": "leaf_back", "bone": "head", "box": [-2, 0, 0, 4, 0, 3], "pivot": [0, -9, 4], "rot": [35, 0, 0], "paint": "leaf"},
-            {"name": "sprout", "bone": "head", "box": [-0.5, -3, -0.5, 1, 3, 1], "pivot": [1, -9, 1], "rot": [8, 0, -10], "paint": "accent"},
-            {"name": "shoulder_leaf", "bone": "right_arm", "box": [-3, 0, -2, 3, 0, 4], "pivot": [-3, -3, 0], "rot": [0, 0, 30], "paint": "leaf", "mirror": True},
+            {"name": "leaf_front", "bone": "head", "box": [-1.5, -4, -0.5, 3, 4, 1], "pivot": [-2, -8.6, -4], "rot": [-20, 0, 25], "paint": "leaf", "mirror": True},
+            {"name": "leaf_side", "bone": "head", "box": [-0.5, -4, -1.5, 1, 4, 3], "pivot": [-4.6, -8.6, 0.5], "rot": [0, 0, 40], "paint": "leaf", "mirror": True},
+            {"name": "leaf_back", "bone": "head", "box": [-1.5, -3, -0.5, 3, 3, 1], "pivot": [0, -8.6, 4.4], "rot": [30, 0, 0], "paint": "leaf"},
+            {"name": "sprout", "bone": "head", "box": [-0.5, -3, -0.5, 1, 3, 1], "pivot": [0.5, -9, -0.5], "rot": [8, 0, -10], "paint": "accent"},
+            {"name": "sprout_leaf", "bone": "head", "box": [-1, -1, -0.5, 2, 1, 1], "pivot": [0.9, -12, -0.4], "rot": [0, 0, -10], "paint": "leaf"},
+            {"name": "shoulder_leaf", "bone": "right_arm", "box": [-0.5, -3, -1.5, 1, 3, 3], "pivot": [-3.6, -3, 0], "rot": [0, 0, 35], "paint": "leaf", "mirror": True},
+            {"name": "shoulder_leaf_b", "bone": "right_arm", "box": [-1.5, -3, -0.5, 3, 3, 1], "pivot": [-2, -3, -2.6], "rot": [-30, 0, 20], "paint": "leaf", "mirror": True},
             {"name": "mushroom_stem", "bone": "right_arm", "box": [-0.5, -2, -0.5, 1, 2, 1], "pivot": [-1, -3, 1.5], "rot": [0, 0, 0], "paint": "light"},
             {"name": "mushroom_cap", "bone": "right_arm", "box": [-1.5, -1, -1.5, 3, 1, 3], "pivot": [-1, -5, 1.5], "rot": [0, 0, 0], "paint": "glow"},
         ]
@@ -686,7 +690,7 @@ class Void(Design):
                 self.stars(face)
 
     def extras(self):
-        halo = {"bone": "head", "pivot": [0, -12.5, 0], "paint": "glow", "spin": 40, "bob": 0.6}
+        halo = {"bone": "head", "pivot": [0, -12.5, 0], "rot": [22, 0, 0], "paint": "glow", "bob": 0.6}
         return [
             dict(halo, name="halo_front", box=[-5, 0, -5, 10, 1, 1]),
             dict(halo, name="halo_back", box=[-5, 0, 4, 10, 1, 1]),

@@ -5,29 +5,29 @@
  ],
  "parts": [
   {
-   "name": "fin",
+   "name": "flame_front",
    "bone": "head",
    "tex": [
     0,
     0
    ],
    "box": [
-    -0.5,
-    -3,
+    -1,
     -4,
-    1,
-    3,
-    8
+    -1,
+    2,
+    4,
+    2
    ],
    "pivot": [
-    0,
-    -9,
-    0
+    -2.5,
+    -8.5,
+    -2
    ],
    "rot": [
+    30,
     0,
-    0,
-    0
+    22
    ],
    "glow": false,
    "spin": 0,
@@ -35,29 +35,60 @@
    "phase": 0
   },
   {
-   "name": "fin_edge",
+   "name": "flame_front_m",
    "bone": "head",
    "tex": [
-    18,
+    0,
+    0
+   ],
+   "box": [
+    -1,
+    -4,
+    -1,
+    2,
+    4,
+    2
+   ],
+   "pivot": [
+    2.5,
+    -8.5,
+    -2
+   ],
+   "rot": [
+    30,
+    0,
+    -22
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "mirror": true
+  },
+  {
+   "name": "flame_front_tip",
+   "bone": "head",
+   "tex": [
+    8,
     0
    ],
    "box": [
     -0.5,
-    -1,
-    -3,
+    -2,
+    -0.5,
     1,
-    1,
-    6
+    2,
+    1
    ],
    "pivot": [
-    0,
-    -11.6,
-    0
+    -4.2,
+    -11.3,
+    0.1
    ],
    "rot": [
+    30,
     0,
-    0,
-    0
+    22
    ],
    "glow": true,
    "spin": 0,
@@ -65,10 +96,163 @@
    "phase": 0
   },
   {
+   "name": "flame_front_tip_m",
+   "bone": "head",
+   "tex": [
+    8,
+    0
+   ],
+   "box": [
+    -0.5,
+    -2,
+    -0.5,
+    1,
+    2,
+    1
+   ],
+   "pivot": [
+    4.2,
+    -11.3,
+    0.1
+   ],
+   "rot": [
+    30,
+    0,
+    -22
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "mirror": true
+  },
+  {
+   "name": "flame_back",
+   "bone": "head",
+   "tex": [
+    12,
+    0
+   ],
+   "box": [
+    -1,
+    -3,
+    -1,
+    2,
+    3,
+    2
+   ],
+   "pivot": [
+    -2,
+    -8.5,
+    2
+   ],
+   "rot": [
+    50,
+    0,
+    18
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0
+  },
+  {
+   "name": "flame_back_m",
+   "bone": "head",
+   "tex": [
+    12,
+    0
+   ],
+   "box": [
+    -1,
+    -3,
+    -1,
+    2,
+    3,
+    2
+   ],
+   "pivot": [
+    2,
+    -8.5,
+    2
+   ],
+   "rot": [
+    50,
+    0,
+    -18
+   ],
+   "glow": false,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "mirror": true
+  },
+  {
+   "name": "flame_back_tip",
+   "bone": "head",
+   "tex": [
+    20,
+    0
+   ],
+   "box": [
+    -0.5,
+    -2,
+    -0.5,
+    1,
+    2,
+    1
+   ],
+   "pivot": [
+    -3,
+    -10.4,
+    4.2
+   ],
+   "rot": [
+    50,
+    0,
+    18
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 0
+  },
+  {
+   "name": "flame_back_tip_m",
+   "bone": "head",
+   "tex": [
+    20,
+    0
+   ],
+   "box": [
+    -0.5,
+    -2,
+    -0.5,
+    1,
+    2,
+    1
+   ],
+   "pivot": [
+    3,
+    -10.4,
+    4.2
+   ],
+   "rot": [
+    50,
+    0,
+    -18
+   ],
+   "glow": true,
+   "spin": 0,
+   "bob": 0,
+   "phase": 1.7,
+   "mirror": true
+  },
+  {
    "name": "spike_a",
    "bone": "right_arm",
    "tex": [
-    32,
+    24,
     0
    ],
    "box": [
@@ -98,7 +282,7 @@
    "name": "spike_a_m",
    "bone": "left_arm",
    "tex": [
-    32,
+    24,
     0
    ],
    "box": [
@@ -129,7 +313,7 @@
    "name": "spike_b",
    "bone": "right_arm",
    "tex": [
-    36,
+    28,
     0
    ],
    "box": [
@@ -159,7 +343,7 @@
    "name": "spike_b_m",
    "bone": "left_arm",
    "tex": [
-    36,
+    28,
     0
    ],
    "box": [
@@ -190,7 +374,7 @@
    "name": "spike_tip",
    "bone": "right_arm",
    "tex": [
-    40,
+    32,
     0
    ],
    "box": [
@@ -220,7 +404,7 @@
    "name": "spike_tip_m",
    "bone": "left_arm",
    "tex": [
-    40,
+    32,
     0
    ],
    "box": [
